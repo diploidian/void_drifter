@@ -500,9 +500,39 @@ class Enemy {
             this.vx = Math.cos(angle) * this.speed;
             this.vy = Math.sin(angle) * this.speed;
             
+        //     // Melee attack
+        //     if (dist < 20 + player.radius) {
+        //         if (this.attackTimer <= 0) {
+        //             this.attackCombo++;
+        //             if (this.attackCombo >= 4) {
+        //                 let aoeDmg = (this.damage * 3) / 2;
+        //                 player.takeDamage(aoeDmg, this);
+                        
+        //                 for (let e of entities) {
+        //                     if (e instanceof Enemy && e !== this) {
+        //                         if (MathUtils.distance(this.x, this.y, e.x, e.y) <= 35 + e.radius) {
+        //                             e.takeDamage(aoeDmg / 2, this);
+        //                         }
+        //                     }
+        //                 }
+        //                 createParticles(this.x, this.y, this.z, 50, '#ff8800');
+        //                 return true; // Despawn without dropping loot/xp
+        //             } else {
+        //                 player.takeDamage(this.damage, this);
+        //             }
+        //             this.attackTimer = 1.0 / 1.5;
+        //         }
+        //     }
+        // } else {           
             // Melee attack
+            if (dist < this.radius + player.radius + 5) {
             if (dist < 20 + player.radius) {
                 if (this.attackTimer <= 0) {
+                    player.takeDamage(this.damage * 1.5, this); // Melee hits harder
+                    this.attackTimer = 1.0;
+                    // bounce back slightly
+                    this.vx = -Math.cos(angle) * this.speed * 2;
+                    this.vy = -Math.sin(angle) * this.speed * 2;
                     this.attackCombo++;
                     if (this.attackCombo >= 4) {
                         let aoeDmg = (this.damage * 3) / 2;
@@ -524,6 +554,7 @@ class Enemy {
                 }
             }
         } else {
+        
             // Shooter keeps distance
             if(dist > 300) {
                 this.vx = Math.cos(angle) * this.speed;
@@ -555,12 +586,30 @@ class Enemy {
         ctx.translate(p.x, p.y);
         ctx.scale(scale, scale);
         
+            if (this.type === 'chaser') {
+            ctx.strokeStyle = 'rgba(255,0,85,0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(0,0,20,0,Math.PI*2); ctx.stroke();
+        }
+
         let angle = Math.atan2(this.vy, this.vx);
         ctx.rotate(angle);
         
         ctx.fillStyle = 'rgba(0,0,0,0.8)';
         ctx.strokeStyle = this.stunTimer > 0 ? '#ffff00' : this.color;
         ctx.lineWidth = 2;
+
+                if (this.type === 'chaser' && this.attackCombo > 0) {
+            let comboColor = 'transparent';
+            if (this.attackCombo === 1) comboColor = 'rgba(255,0,0,0.5)';
+            else if (this.attackCombo === 2) comboColor = 'rgba(255,128,0,0.5)';
+            else if (this.attackCombo === 3) {
+                let t = (Math.sin(Date.now() / 100) + 1) / 2;
+                let g = Math.floor(128 + 127 * t);
+                comboColor = `rgba(255,${g},0,0.7)`;
+            }
+            ctx.fillStyle = comboColor;
+        }
         
         ctx.beginPath();
         if(this.type === 'chaser') {
