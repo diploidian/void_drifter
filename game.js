@@ -1963,4 +1963,3 @@ inventory[0] = {
 };
 updateUI();
 requestAnimationFrame(t => { GAME.lastTime = t; loop(t); });
-
