@@ -1715,21 +1715,19 @@ function update(dt) {
         if(floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
     }
 
-    // Enemy Spawning
-    if(Math.random() < dt * 0.5) {
-    if(!GAME.activeBoss && Math.random() < dt * 0.5) {
-        // Spawn slightly outside camera
-        let angle = Math.random() * Math.PI * 2;
-        let dist = MathUtils.rand(800, 1200);
-        entities.push(new Enemy(player.x + Math.cos(angle)*dist, player.y + Math.sin(angle)*dist));
-    }
+// Enemy Spawning
+if (!GAME.activeBoss && Math.random() < dt * 0.5) {
+    let angle = Math.random() * Math.PI * 2;
+    let dist = MathUtils.rand(800, 1200);
+    entities.push(new Enemy(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+}
 
-    // Map chunk discovery for minimap
-    let chunkX = Math.floor(player.x / 200);
-    let chunkY = Math.floor(player.y / 200);
-    GAME.fowMap.set(`${chunkX},${chunkY}`, true);
+// Map chunk discovery for minimap
+let chunkX = Math.floor(player.x / 200);
+let chunkY = Math.floor(player.y / 200);
+GAME.fowMap.set(`${chunkX},${chunkY}`, true);
 
-    updateUI();
+updateUI();
 }
 
 function draw() {
@@ -1961,7 +1959,7 @@ inventory[0] = {
     tier: 0,
     stackable: true,
     count: 3,
-    desc: 'Restores 5 Fuel on use.'
+    desc: 'Restores 12 Fuel on use.'
 };
+updateUI();
 requestAnimationFrame(t => { GAME.lastTime = t; loop(t); });
-}
