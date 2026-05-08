@@ -500,32 +500,7 @@ class Enemy {
             this.vx = Math.cos(angle) * this.speed;
             this.vy = Math.sin(angle) * this.speed;
             
-        //     // Melee attack
-        //     if (dist < 20 + player.radius) {
-        //         if (this.attackTimer <= 0) {
-        //             this.attackCombo++;
-        //             if (this.attackCombo >= 4) {
-        //                 let aoeDmg = (this.damage * 3) / 2;
-        //                 player.takeDamage(aoeDmg, this);
-                        
-        //                 for (let e of entities) {
-        //                     if (e instanceof Enemy && e !== this) {
-        //                         if (MathUtils.distance(this.x, this.y, e.x, e.y) <= 35 + e.radius) {
-        //                             e.takeDamage(aoeDmg / 2, this);
-        //                         }
-        //                     }
-        //                 }
-        //                 createParticles(this.x, this.y, this.z, 50, '#ff8800');
-        //                 return true; // Despawn without dropping loot/xp
-        //             } else {
-        //                 player.takeDamage(this.damage, this);
-        //             }
-        //             this.attackTimer = 1.0 / 1.5;
-        //         }
-        //     }
-        // } else {           
             // Melee attack
-            if (dist < this.radius + player.radius + 5) {
             if (dist < 20 + player.radius) {
                 if (this.attackTimer <= 0) {
                     player.takeDamage(this.damage * 1.5, this); // Melee hits harder
