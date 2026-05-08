@@ -28,6 +28,11 @@
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
         .interactive { pointer-events: auto; }
 
+        /* XP Bar - Top */
+        #xp-bar-container { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 400px; height: 12px; background: rgba(0,0,0,0.6); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; box-shadow: 0 0 10px rgba(0, 255, 102, 0.2); }
+        #xp-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #003311, #00ff66); transition: width 0.2s linear; }
+        #lvl-text { position: absolute; top: 38px; left: 50%; transform: translateX(-50%); font-family: 'Orbitron'; font-size: 16px; color: #00ff66; text-shadow: 0 0 5px rgba(0, 255, 102, 0.5); font-weight: bold; letter-spacing: 2px; }
+
         /* HUD - Bottom */
         #hud-bottom { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; width: 600px; }
         
@@ -121,6 +126,11 @@
             [I] Inventory / Ship Stats<br>
             <i>Avoid high-speed asteroid collisions!</i>
         </div>
+
+        <div id="xp-bar-container">
+            <div id="xp-fill"></div>
+        </div>
+        <div id="lvl-text">LEVEL 1</div>
 
         <div id="minimap-container" class="interactive">
             <canvas id="minimap"></canvas>
@@ -339,35 +349,36 @@ function generateLoot(type = null, tierLevel = -1) {
     
     let stats = {};
     let statLines = [];
+    let lvlMult = 1 + (player.level - 1) * 0.15; // +15% item value per level
     
     // Generate Stats based on type
     if(type === 'Primary Weapon' || type === 'Secondary Weapon') {
-        stats.damage = Math.floor(MathUtils.rand(10, 20) * tier.mult);
-        stats.fireRate = Math.floor(MathUtils.rand(10, 50) * tier.mult);
+        stats.damage = Math.floor(MathUtils.rand(10, 20) * tier.mult * lvlMult);
+        stats.fireRate = Math.floor(MathUtils.rand(10, 50) * tier.mult * lvlMult);
         statLines.push(`+${stats.damage} Damage`);
         statLines.push(`+${stats.fireRate}% Fire Rate`);
     }
     if(type === 'Hull') {
-        stats.maxHp = Math.floor(MathUtils.rand(20, 50) * tier.mult);
-        stats.armor = Math.floor(MathUtils.rand(2, 10) * tier.mult);
+        stats.maxHp = Math.floor(MathUtils.rand(20, 50) * tier.mult * lvlMult);
+        stats.armor = Math.floor(MathUtils.rand(2, 10) * tier.mult * lvlMult);
         statLines.push(`+${stats.maxHp} Max HP`);
         statLines.push(`+${stats.armor} Armor`);
     }
     if(type === 'Shields') {
-        stats.maxShields = Math.floor(MathUtils.rand(20, 40) * tier.mult);
-        stats.shieldRegen = Math.floor(MathUtils.rand(2, 8) * tier.mult);
+        stats.maxShields = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult);
+        stats.shieldRegen = Math.floor(MathUtils.rand(2, 8) * tier.mult * lvlMult);
         statLines.push(`+${stats.maxShields} Max Shields`);
         statLines.push(`+${stats.shieldRegen} Shield/sec`);
     }
     if(type === 'Engine') {
-        stats.maxSpeed = Math.floor(MathUtils.rand(50, 150) * tier.mult);
-        stats.acceleration = Math.floor(MathUtils.rand(10, 30) * tier.mult);
+        stats.maxSpeed = Math.floor(MathUtils.rand(50, 150) * tier.mult * lvlMult);
+        stats.acceleration = Math.floor(MathUtils.rand(10, 30) * tier.mult * lvlMult);
         statLines.push(`+${stats.maxSpeed} Max Speed`);
         statLines.push(`+${stats.acceleration} Thrust`);
     }
     if(type === 'Reactor') {
-        stats.maxEnergy = Math.floor(MathUtils.rand(20, 60) * tier.mult);
-        stats.energyRegen = Math.floor(MathUtils.rand(5, 15) * tier.mult);
+        stats.maxEnergy = Math.floor(MathUtils.rand(20, 60) * tier.mult * lvlMult);
+        stats.energyRegen = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult);
         statLines.push(`+${stats.maxEnergy} Max Energy`);
         statLines.push(`+${stats.energyRegen} Energy/sec`);
     }
@@ -415,6 +426,9 @@ const player = {
     radius: 15,
     angle: 0,
     damageIntensity: 0, // Used for screen red glow
+    level: 1,
+    xp: 0,
+    xpNext: 100,
     stats: { ...BASE_STATS },
     statBreakdown: {},
     timers: { dodge: 0, shieldRegen: 0 },
@@ -425,6 +439,27 @@ const player = {
         { id: 4, name: 'Singularity Torpedo', cost: 50, cd: 0, maxCd: 10.0, type: 'special' }
     ],
     
+    gainXp(amount) {
+        this.xp += amount;
+        while (this.xp >= this.xpNext) {
+            this.xp -= this.xpNext;
+            this.level++;
+            this.xpNext = 100 * this.level; // Requires more total XP linearly
+            
+            // Level Up Rewards
+            BASE_STATS.maxHp += 20;
+            BASE_STATS.damage += 2;
+            
+            // Heal/Restore on level up
+            this.stats.hp = this.stats.maxHp;
+            this.stats.energy = this.stats.maxEnergy;
+            
+            createFloatingText("LEVEL UP!", this.x, this.y - 30, '#00ff66', 2.5, false, false);
+            this.updateStats();
+        }
+        updateUI();
+    },
+
     updateStats() {
         // Reset to base
         let oldHpRatio = this.stats.hp / this.stats.maxHp;
@@ -502,6 +537,7 @@ let particles = [];
 let projectiles = [];
 let drops = [];
 let floatingTexts = [];
+let xpOrbs = [];
 
 class Asteroid {
     constructor(x, y, radius) {
@@ -602,6 +638,8 @@ class Asteroid {
                 spawnDrop(this.x, this.y, true); // force resource
             }
             if(Math.random() < 0.1) spawnDrop(this.x, this.y); // small chance for gear
+            // Small chance for fragments
+            if(Math.random() < 0.3) xpOrbs.push(new XpOrb(this.x, this.y, player.level * 1)); 
             return true; // remove
         }
         return false;
@@ -613,9 +651,14 @@ class Enemy {
         this.x = x; this.y = y; this.z = 1000; // Spawn from deep space
         this.vx = 0; this.vy = 0; this.vz = -500; // Move up to z=0
         this.radius = 12;
-        this.hp = 50;
-        this.maxHp = 50;
-        this.speed = 150;
+        this.level = player.level;
+        
+        // Scale HP and Damage with Level
+        this.maxHp = 50 * (1 + (this.level - 1) * 0.3);
+        this.hp = this.maxHp;
+        this.damage = 10 * (1 + (this.level - 1) * 0.2);
+        
+        this.speed = 150 + (this.level * 2); // get slightly faster
         this.attackTimer = 0;
         this.stunTimer = 0;
         this.type = Math.random() < 0.7 ? 'chaser' : 'shooter';
@@ -644,7 +687,7 @@ class Enemy {
             // Melee attack
             if (dist < this.radius + player.radius + 5) {
                 if (this.attackTimer <= 0) {
-                    player.takeDamage(15);
+                    player.takeDamage(this.damage * 1.5); // Melee hits harder
                     this.attackTimer = 1.0;
                     // bounce back slightly
                     this.vx = -Math.cos(angle) * this.speed * 2;
@@ -665,7 +708,7 @@ class Enemy {
             
             if (this.attackTimer <= 0 && dist < 400) {
                 // Shoot player
-                projectiles.push(new Projectile(this.x, this.y, angle, 300, 10, false, this.color));
+                projectiles.push(new Projectile(this.x, this.y, angle, 300, this.damage, false, this.color));
                 this.attackTimer = 2.0;
             }
         }
@@ -704,10 +747,14 @@ class Enemy {
     }
     takeDamage(amount) {
         this.hp -= amount;
-        createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, '#fff');
+        createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, '#fff', 1.0, false, true);
         if(this.hp <= 0) {
             createParticles(this.x, this.y, this.z, 30, this.color);
             if(Math.random() < 0.5) spawnDrop(this.x, this.y);
+            
+            // Drop XP Orbs (Fixed at 5 * level per enemy kill)
+            xpOrbs.push(new XpOrb(this.x, this.y, 5 * this.level));
+            
             return true;
         }
         return false;
@@ -914,6 +961,54 @@ class Drop {
     }
 }
 
+class XpOrb {
+    constructor(x, y, xpValue) {
+        this.x = x; this.y = y; this.z = 0;
+        this.xpValue = xpValue;
+        this.radius = 4;
+        let ang = MathUtils.rand(0, Math.PI * 2);
+        let spd = MathUtils.rand(50, 100);
+        this.vx = Math.cos(ang) * spd;
+        this.vy = Math.sin(ang) * spd;
+        this.life = 0;
+    }
+    update(dt) {
+        this.life += dt;
+        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
+        
+        // Magnetize to player
+        if (dist < 250) { 
+            let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
+            let pullSpeed = 500 - dist; 
+            this.vx = Math.cos(angle) * pullSpeed;
+            this.vy = Math.sin(angle) * pullSpeed;
+        } else {
+            this.vx *= 0.95; 
+            this.vy *= 0.95;
+        }
+        
+        this.x += this.vx * dt; 
+        this.y += this.vy * dt;
+
+        if (dist < player.radius + this.radius + 15) {
+            player.gainXp(this.xpValue);
+            return true; // remove orb
+        }
+        return false;
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let s = getScale(this.z);
+        let pulse = 1 + 0.4 * Math.sin(this.life * 8);
+        ctx.fillStyle = '#00ff66';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#00ff66';
+        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+}
+
 class Particle {
     constructor(x, y, z, color, life = 1.0) {
         this.x = x; this.y = y; this.z = z;
@@ -1096,6 +1191,9 @@ function drawGrid(ctx) {
  * UI & INVENTORY LOGIC
  * ========================================== */
 function updateUI() {
+    document.getElementById('xp-fill').style.width = `${(player.xp / player.xpNext)*100}%`;
+    document.getElementById('lvl-text').innerText = `LEVEL ${player.level}`;
+
     document.getElementById('hp-fill').style.width = `${(player.stats.hp / player.stats.maxHp)*100}%`;
     document.getElementById('hp-text').innerText = `HP: ${Math.floor(player.stats.hp)}/${player.stats.maxHp}`;
     
@@ -1340,14 +1438,16 @@ function useSkill(index) {
     else if(index === 1) { // EMP
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         for(let e of entities) {
-            if(e instanceof Enemy && MathUtils.distance(player.x, player.y, e.x, e.y) < 450) {
+            // Reduced 40% (450 -> 270)
+            if(e instanceof Enemy && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
                 e.takeDamage(player.stats.damage * 2);
                 e.stunTimer = 3.0;
             }
         }
     }
     else if(index === 2) { // Warp Dash
-        let dist = Math.min(500, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
+        // Reduced 40% (500 -> 300)
+        let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
         let oldX = player.x, oldY = player.y;
         player.x += Math.cos(angle) * dist;
         player.y += Math.sin(angle) * dist;
@@ -1475,6 +1575,9 @@ function update(dt) {
     for(let i=drops.length-1; i>=0; i--) {
         if(drops[i].update(dt)) drops.splice(i, 1);
     }
+    for(let i=xpOrbs.length-1; i>=0; i--) {
+        if(xpOrbs[i].update(dt)) xpOrbs.splice(i, 1);
+    }
     for(let i=particles.length-1; i>=0; i--) {
         if(particles[i].update(dt)) particles.splice(i, 1);
     }
@@ -1533,7 +1636,7 @@ function draw() {
 
     // Draw order: Z-sorting
     let allRenderables = [
-        ...entities, ...drops, ...particles, ...projectiles,
+        ...entities, ...drops, ...xpOrbs, ...particles, ...projectiles,
         { isPlayer: true, x: player.x, y: player.y, z: 0 }
     ].sort((a, b) => b.z - a.z); // draw deep space first
 
@@ -1548,17 +1651,22 @@ function draw() {
                 
                 // Ability Range Faint Overlays (Under ship, stationary relative to ship orientation)
                 ctx.lineWidth = 1;
-                // EMP (Skill 2)
+
+                // Pulse Blaster Range (Skill 1) - 6 Grid Squares = 1200 units
+                ctx.strokeStyle = 'rgba(0, 210, 255, 0.05)';
+                ctx.beginPath(); ctx.arc(0,0,1200,0,Math.PI*2); ctx.stroke();
+
+                // EMP (Skill 2) - reduced 40% to 270
                 ctx.strokeStyle = 'rgba(51, 204, 255, 0.1)';
-                ctx.beginPath(); ctx.arc(0,0,450,0,Math.PI*2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(0,0,270,0,Math.PI*2); ctx.stroke();
                 
-                // Warp Dash (Skill 3 limit)
+                // Warp Dash (Skill 3 limit) - reduced 40% to 300
                 ctx.strokeStyle = 'rgba(153, 51, 255, 0.08)';
-                ctx.beginPath(); ctx.arc(0,0,500,0,Math.PI*2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(0,0,300,0,Math.PI*2); ctx.stroke();
                 
-                // Singularity Placement Indicator
+                // Singularity Placement Indicator - reduced 40% to 360
                 ctx.strokeStyle = 'rgba(255, 0, 85, 0.05)';
-                ctx.beginPath(); ctx.arc(0,0,600,0,Math.PI*2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(0,0,360,0,Math.PI*2); ctx.stroke();
 
                 ctx.rotate(player.angle);
                 
