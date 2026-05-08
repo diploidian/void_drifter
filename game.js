@@ -28,7 +28,8 @@ const GAME = {
     state: 'PLAYING', // PLAYING, INVENTORY, DEAD
     lastTime: 0,
     camera: { x: 0, y: 0, zoom: 1.0 },
-    keys: { w: false, a: false, s: false, d: false, ' ': false, '1': false, '2': false, '3': false, '4': false,  :
+    keys: { w: false, a: false, s: false, d: false, ' ': false, '1': false, '2': false, '3': false, '4': false, 'f': false },
+    mouse: { x: cw/2, y: ch/2, worldX: 0, worldY: 0, left: false },
     fowMap: new Map(), // Fog of War visited chunks
     stars: [],
     clouds: []
@@ -75,7 +76,11 @@ function getIcon(type, color) {
 const SLOT_TYPES = ['Primary Weapon', 'Secondary Weapon', 'Hull', 'Shields', 'Engine', 'Reactor'];
 const TIERS = [
     { name: 'Junk', level: 0, color: '#aaa', mult: 0, mods: 0 },
-    { name: 'Common', level: 1, color: '#fff', mult:ff3o,.5, mods: 5 }
+    { name: 'Common', level: 1, color: '#fff', mult: 1, mods: 2 },
+    { name: 'Uncommon', level: 2, color: '#33ff33', mult: 1.25, mods: 2 },
+    { name: 'Rare', level: 3, color: '#4bf', mult: 1.5, mods: 3 },
+    { name: 'Epic', level: 4, color: '#aa33ff', mult: 2.0, mods: 4 },
+    { name: 'Legendary', level: 5, color: '#f82', mult: 2.5, mods: 5 }
 ];
 
 const ITEM_TEMPLATES = {
@@ -84,10 +89,13 @@ const ITEM_TEMPLATES = {
     'Hull': { names: ['Titanium Plating', 'Ablative Armor', 'Nanite Shell'], stats: ['maxHp', 'armor'] },
     'Shields': { names: ['Deflector Array', 'Plasma Bubble', 'Phase Shield'], stats: ['maxShields', 'shieldRegen'] },
     'Engine': { names: ['Ion Thruster', 'Plasma Drive', 'Warp Core'], stats: ['maxSpeed', 'acceleration'] },
-    'Reactor': { names: ['Fusion Core', 'Antimatter Cell', 'Zero-Point Module'], stats: ['maxEngyRegen'] }
+    'Reactor': { names: ['Fusion Core', 'Antimatter Cell', 'Zero-Point Module'], stats: ['maxEnergy', 'energyRegen'] }
 };
-/ 20% chance for junk/resources
+
+function generateLoot(type = null, tierLevel = -1) {
+    // 20% chance for junk/resources
     if (Math.random() < 0.25 && type === null) {
+        const isFuel = Math.random() < 0.5;
         return {
             id: Math.random().toString(36).substr(2, 9),
             name: isFuel ? 'Fuel Cell' : 'Raw Minerals',
@@ -103,13 +111,15 @@ const ITEM_TEMPLATES = {
     if (tierLevel === -1) {
         const r = Math.random();
         if (r > 0.99) tierLevel = 5; 
-        else if (r > 0.95) tierLev= 3; 
+        else if (r > 0.95) tierLevel = 4; 
+        else if (r > 0.85) tierLevel = 3; 
         else if (r > 0.50) tierLevel = 2; 
         else tierLevel = 1; 
     }
     
     if (player.level < 3 && tierLevel > 2) {
         tierLevel = 2;
+    }
     
     const tier = TIERS[tierLevel];
     const template = ITEM_TEMPLATES[type];
@@ -129,7 +139,13 @@ const ITEM_TEMPLATES = {
     availableStats = [...new Set(availableStats)];
     
     let pickedStats = [];
-= roa- c stat of pickedStats) {
+    for (let i = 0; i < tier.mods; i++) {
+        if (availableStats.length === 0) break;
+        let idx = MathUtils.randInt(0, availableStats.length - 1);
+        pickedStats.push(availableStats.splice(idx, 1)[0]);
+    }
+
+    for (let stat of pickedStats) {
         let val = 0; let str = '';
         if (stat === 'fireRate') { val = Math.floor(MathUtils.rand(1, 5) * tier.mult); str = `+${val}% Fire Rate`; }
         else if (stat === 'damage') { val = Math.floor(MathUtils.rand(10, 20) * tier.mult * lvlMult); str = `+${val} Damage`; }
@@ -144,8 +160,13 @@ const ITEM_TEMPLATES = {
         else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
         
         if (val > 0) { stats[stat] = val; statLines.push(str); }
+    }
 
-tier: tierLevel,
+    let item = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: name,
+        type: type,
+        tier: tierLevel,
         stackable: false,
         count: 1,
         stats: stats,
@@ -161,9 +182,28 @@ tier: tierLevel,
         if (type === 'Engine') { item.perk = 'Fuel Efficiency'; item.statLines.push(`[PERK] 25% better fuel efficiency`); }
         if (type === 'Reactor') { item.perk = 'XP Boost'; item.statLines.push(`[PERK] +15% XP & Orb pull range`); }
     }
+    
+    return item;
+}
 
-tu===================== */
-const INelds: 50, shields: 50, shieldRegen: 5,
+/** ==========================================
+ * PLAYER & INVENTORY STATE
+ * ========================================== */
+const INVENTORY_SIZE = 50;
+let inventory = new Array(INVENTORY_SIZE).fill(null);
+let equipment = {
+    'Primary Weapon': null,
+    'Secondary Weapon': null,
+    'Hull': null,
+    'Shields': null,
+    'Engine': null,
+    'Reactor': null
+};
+
+// Base stats
+const BASE_STATS = {
+    maxHp: 100, hp: 100, armor: 0,
+    maxShields: 50, shields: 50, shieldRegen: 5,
     maxEnergy: 100, energy: 100, energyRegen: 10,
     maxFuel: 100, fuel: 100,
     maxSpeed: 300, acceleration: 400, friction: 0.95,
@@ -205,8 +245,10 @@ const player = {
             // Heal 25% on level up and reset CD
             this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + this.stats.maxHp * 0.25);
             for(let s of this.skills) s.cd = 0;
+            
             this.skills[0].cost = Math.floor(5 * (1 + 0.2 * (this.level - 1)));
-            eext("LEVEL UP!", this.x, this.y - 30, '#00ff66', 2.5, false, false);
+            
+            createFloatingText("LEVEL UP!", this.x, this.y - 30, '#00ff66', 2.5, false, false);
             this.updateStats();
         }
         updateUI();
@@ -225,12 +267,14 @@ const player = {
         }
         
         // Add equip modifiers
-        for (let key in equipment) { = eu;
+        for (let key in equipment) {
+            let item = equipment[key];
             if (item && item.stats) {
                 for (let stat in item.stats) {
                     if(this.stats[stat] !== undefined) {
                         if (stat === 'fireRate') {
                             let increase = BASE_STATS.fireRate * (item.stats[stat] / 100);
+                            this.stats[stat] += increase;
                             this.statBreakdown[stat].items.push({ name: item.name, val: increase });
                         } else {
                             this.stats[stat] += item.stats[stat];
@@ -240,8 +284,11 @@ const player = {
                 }
             }
         }
-        tats.maxShields, this.stats.maxShields * oldShieldRatio);
-      thisahergy, this.stats.maxEnergy * oldEnRatio);
+        
+        // Maintain ratios
+        this.stats.hp = Math.min(this.stats.maxHp, this.stats.maxHp * oldHpRatio);
+        this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
+        this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
         // 100 fire rate = 0.25s.
         this.skills[0].maxCd = 0.25 / (this.stats.fireRate / 100);
@@ -272,7 +319,9 @@ const player = {
             // Damage text over character
             createFloatingText("-" + Math.floor(actualDamage), this.x, this.y, '#ff3366', 1.5, false, true);
             
-            // Screen Gl tensity = Math.min(1.0, this.damageIntensity + dmgRatio * 2.5);
+            // Screen Glow intensity increase
+            let dmgRatio = actualDamage / this.stats.maxHp;
+            this.damageIntensity = Math.min(1.0, this.damageIntensity + dmgRatio * 2.5);
 
             if (this.stats.hp <= 0) {
                 this.stats.hp = 0;
@@ -290,12 +339,15 @@ const player = {
 let entities = [];
 let particles = [];
 let projectiles = [];
-let drops [p
+let drops = [];
+let floatingTexts = [];
+let xpOrbs = [];
 
 class Asteroid {
     constructor(x, y, radius) {
-          this.vx = MathUtils.rand(-20, 20); this.vy = MathUtils.rand(-20, 20);
-    dius;
+        this.x = x; this.y = y; this.z = 0;
+        this.vx = MathUtils.rand(-20, 20); this.vy = MathUtils.rand(-20, 20);
+        this.radius = radius;
         this.hp = radius * 2;
         this.maxHp = this.hp;
         this.points = [];
@@ -433,7 +485,8 @@ class Enemy {
             return; // don't act while spawning
         }
         
-        if (this.stunTimer -= dt;
+        if (this.stunTimer > 0) {
+            this.stunTimer -= dt;
             return;
         }
 
@@ -500,6 +553,7 @@ class Enemy {
             ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.moveTo(0,0); ctx.lineTo(15, 0); // barrel
         }
+        ctx.closePath();
         ctx.fill(); ctx.stroke();
         
         ctx.restore();
@@ -522,6 +576,7 @@ class Enemy {
             
             // Drop XP Orbs (Fixed at 5 * level per enemy kill)
             xpOrbs.push(new XpOrb(this.x, this.y, 5 * this.level));
+            
             return true;
         }
         return false;
@@ -557,7 +612,8 @@ class Projectile {
                         if(e.takeDamage(this.damage, this.source)) entities.splice(i, 1);
                         createParticles(this.x, this.y, 0, 5, this.color);
                         return true; // destroy projectile
-     
+                    }
+                }
             }
         } else {
             if(MathUtils.distance(this.x, this.y, player.x, player.y) < player.radius) {
@@ -583,7 +639,8 @@ class Singularity {
     constructor(x, y, targetX, targetY) {
         this.x = x; this.y = y; this.z = 0;
         let angle = MathUtils.angle(x, y, targetX, targetY);
-        th  t
+        this.vx = Math.cos(angle) * 400;
+        this.vy = Math.sin(angle) * 400;
         this.targetX = targetX; this.targetY = targetY;
         this.state = 'moving'; // moving, blackhole
         this.timer = 3.0; // blackhole duration
@@ -609,7 +666,8 @@ class Singularity {
                     let pull = (this.radius - d) * 2;
                     e.x += Math.cos(ang) * pull * dt;
                     e.y += Math.sin(ang) * pull * dt;
-                    if(e instanceof Enemy) e.takeD.m 
+                    if(e instanceof Enemy) e.takeDamage(player.stats.damage * dt, player); // dot damage scaling with player
+                }
             }
             
             // Sucks drops too
@@ -618,6 +676,7 @@ class Singularity {
                 if (dist < this.radius) {
                     let ang = MathUtils.angle(d.x, d.y, this.x, this.y);
                     d.x += Math.cos(ang) * 200 * dt;
+                    d.y += Math.sin(ang) * 200 * dt;
                 }
             }
             
@@ -667,6 +726,7 @@ class Singularity {
 class Drop {
     constructor(x, y, forceResource = false) {
         this.x = x; this.y = y; this.z = 0;
+        this.item = generateLoot(forceResource ? null : undefined);
         this.color = TIERS[this.item.tier].color;
         this.iconInfo = getIcon(this.item.type, this.color);
         this.hoverOffset = Math.random() * Math.PI * 2;
@@ -690,6 +750,7 @@ class Drop {
                     this.vy -= Math.sin(ang) * 50 * dt;
                 }
             }
+        }
         
         // Apply velocity & friction
         this.vx *= 0.95;
@@ -803,7 +864,8 @@ class Particle {
 }
 
 class FloatingText {
-    constructor(text, x, y, cothis.x = x; this.y = y; this.z = 0;
+    constructor(text, x, y, color, life = 1.0, isLoot = false, isDamage = false) {
+        this.text = text; this.x = x; this.y = y; this.z = 0;
         this.life = life; this.maxLife = life;
         this.color = color;
         this.isLoot = isLoot;
@@ -1042,7 +1104,9 @@ function renderEquipment() {
         }
     }
 }
-tainer = document.getElementById('stats-list-container');
+
+function renderStats() {
+    const container = document.getElementById('stats-list-container');
     
     function getStatHtml(key, name, desc, formatFn = val => val) {
         let bd = player.statBreakdown[key];
@@ -1165,11 +1229,14 @@ function showTooltip(title, desc, statsHtml, e) {
 function showItemTooltip(item, e) {
     document.getElementById('tt-title').innerText = item.name;
     document.getElementById('tt-title').className = `tt-title tier-${item.tier}`;
-    document.getElementById('tt
-    eqItem = SLOT_TYPES.includes(item.type) ? equipment[item.type] : null;
+    document.getElementById('tt-type').innerText = item.type;
+    document.getElementById('tt-desc').innerHTML = item.desc;
+    
+    let eqItem = SLOT_TYPES.includes(item.type) ? equipment[item.type] : null;
     let statsHtml = [];
     if (item.stats) {
-        for (let = item.stats[stat];
+        for (let stat in item.stats) {
+            let val = item.stats[stat];
             let delta = eqItem && eqItem.stats && eqItem.stats[stat] ? val - eqItem.stats[stat] : val;
             let str = item.statLines.find(l => l.includes(val) && !l.startsWith('[PERK]'));
             if (!str) str = `+${val} ${stat}`;
@@ -1200,7 +1267,8 @@ function showItemTooltip(item, e) {
         }
         document.getElementById('tt-eq-stats').innerHTML = eqStatsHtml.join('<br>');
     } else {
-     Ely=n
+        ttEq.style.display = 'none';
+    }
     
     positionTooltip(e);
 }
@@ -1215,7 +1283,8 @@ function showSkillTooltip(id, e) {
         `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${player.stats.damage * 2}</span> damage and stunning nearby enemies.`,
         `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${player.stats.damage}</span> damage.`,
         `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${player.stats.damage * 20}</span> damage.`
-    Tooltip(skill.name, descs[id-1], `Cost: ${skill.cost} Energy<br>Cooldown: ${skill.maxCd.toFixed(2)}s`, e);
+    ];
+    showTooltip(skill.name, descs[id-1], `Cost: ${skill.cost} Energy<br>Cooldown: ${skill.maxCd.toFixed(2)}s`, e);
 }
 function hideTooltip() { ttContainer.style.opacity = 0; }
 function positionTooltip(e) {
@@ -1231,7 +1300,8 @@ function toggleInventory() {
     if(GAME.state === 'PLAYING') {
         GAME.state = 'INVENTORY';
         el.style.display = 'flex';
-  
+        updateUI();
+    } else if (GAME.state === 'INVENTORY') {
         GAME.state = 'PLAYING';
         el.style.display = 'none';
         hideTooltip();
@@ -1286,11 +1356,16 @@ function useSkill(index) {
         for(let e of entities) {
             // Reduced 40% (450 -> 270)
             if(e instanceof Enemy && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
-                e.takeDamt  = 3.0;
+                e.takeDamage(player.stats.damage * 2);
+                e.stunTimer = 3.0;
             }
-    }}
+        }
+    }
     else if(index === 2) { // Warp Dash
-        etitr.x += Math.cos(angle) * dist;
+        // Reduced 40% (500 -> 300)
+        let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
+        let oldX = player.x, oldY = player.y;
+        player.x += Math.cos(angle) * dist;
         player.y += Math.sin(angle) * dist;
         
         // Trail
@@ -1318,8 +1393,11 @@ function update(dt) {
         player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.01) * dt);
     }
 
-m
-    yf(GAME.keys.a) ax -= player.stats.acceleration;
+    // --- Player Movement & Physics ---
+    let ax = 0, ay = 0;
+    if(GAME.keys.w) ay -= player.stats.acceleration;
+    if(GAME.keys.s) ay += player.stats.acceleration;
+    if(GAME.keys.a) ax -= player.stats.acceleration;
     if(GAME.keys.d) ax += player.stats.acceleration;
 
     player.vx += ax * dt;
@@ -1342,6 +1420,7 @@ m
             player.timers.dodge = 2.0; // cooldown
             createParticles(player.x, player.y, 0, 20, varColor('--accent'));
         }
+    }
     if(player.timers.dodge > 0) player.timers.dodge -= dt;
 
     // Apply movement
@@ -1376,11 +1455,13 @@ m
     if(GAME.keys['1']) useSkill(0);
     if(GAME.keys['2']) useSkill(1);
     if(GAME.keys['3']) useSkill(2);
+    if(GAME.keys['4']) useSkill(3);
 
     // Damage Intensity Decay
     if(player.damageIntensity > 0) {
         player.damageIntensity = Math.max(0, player.damageIntensity - dt);
     }
+
     // --- Resource Regen & Drain ---
     if(speed > 10) {
         let eff = (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') ? 0.75 : 1.0;
@@ -1463,7 +1544,8 @@ function draw() {
     for(let c of GAME.clouds) {
         let p = project(c.x, c.y, c.z);
         if(p) {
-            let scal
+            let scale = getScale(c.z);
+            let rad = c.radius * scale;
             let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
             grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${c.alpha})`);
             grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
