@@ -69,6 +69,9 @@
                     <div class="skill-key">4</div> SG
                     <div class="cooldown-overlay" id="cd-4"></div>
                 </div>
+                <div class="skill-slot" id="skill-5" onmouseover="showTooltip('Fuel Cell', 'Replenish 5 Fuel', 'Cost: 1 Fuel Cell', event)" onmouseout="hideTooltip()">
+                    <div class="skill-key">F</div> FL
+                </div>
             </div>
         </div>
 
@@ -111,11 +114,28 @@
         </div>
     </div>
 
-    <div id="tooltip">
-        <div class="tt-title" id="tt-title">Title</div>
-        <div class="tt-type" id="tt-type">Type</div>
-        <div class="tt-desc" id="tt-desc">Description goes here</div>
-        <div class="tt-stats" id="tt-stats"></div>
+    <div id="hud-right" class="interactive">
+        <div id="hud-eq-Primary Weapon" class="hud-eq-slot">Primary</div>
+        <div id="hud-eq-Secondary Weapon" class="hud-eq-slot">Secondary</div>
+        <div id="hud-eq-Hull" class="hud-eq-slot">Hull</div>
+        <div id="hud-eq-Shields" class="hud-eq-slot">Shields</div>
+        <div id="hud-eq-Engine" class="hud-eq-slot">Engine</div>
+        <div id="hud-eq-Reactor" class="hud-eq-slot">Reactor</div>
+    </div>
+
+    <div id="tooltip-container">
+        <div id="tooltip" class="tooltip-box">
+            <div class="tt-title" id="tt-title">Title</div>
+            <div class="tt-type" id="tt-type">Type</div>
+            <div class="tt-desc" id="tt-desc">Description goes here</div>
+            <div class="tt-stats" id="tt-stats"></div>
+        </div>
+        <div id="tooltip-equipped" class="tooltip-box" style="display:none; opacity: 0.8;">
+            <div class="tt-title" id="tt-eq-title">Equipped Title</div>
+            <div class="tt-type" id="tt-eq-type">Type</div>
+            <div class="tt-desc" id="tt-eq-desc">Description goes here</div>
+            <div class="tt-stats" id="tt-eq-stats"></div>
+        </div>
     </div>
 
     <div id="game-over">

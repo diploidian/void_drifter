@@ -84,19 +84,28 @@
         .stack-count { position: absolute; bottom: 2px; right: 4px; font-size: 10px; font-weight: bold; text-shadow: 1px 1px 2px black; }
 
         /* Tooltip */
-        #tooltip { position: absolute; background: rgba(5, 10, 15, 0.95); border: 1px solid var(--border); padding: 12px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 100; min-width: 200px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #tooltip-container { position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 100; display: flex; gap: 10px; }
+        .tooltip-box { background: rgba(5, 10, 15, 0.95); border: 1px solid var(--border); padding: 12px; border-radius: 6px; min-width: 200px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         .tt-title { font-family: 'Orbitron', sans-serif; font-size: 14px; margin-bottom: 5px; }
         .tt-type { font-size: 11px; color: #888; margin-bottom: 8px; text-transform: uppercase; }
         .tt-desc { font-size: 13px; color: #ccc; margin-bottom: 8px; }
         .tt-stats { font-size: 12px; color: #0f0; }
+
+        /* HUD Right */
+        #hud-right { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; opacity: 0.3; transition: opacity 0.2s; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px; border: 1px solid var(--border); pointer-events: auto; }
+        #hud-right:hover { opacity: 0.85; }
+        .hud-eq-slot { width: 40px; height: 40px; border: 1px solid #555; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; }
+        .hud-eq-slot svg { width: 70%; height: 70%; }
 
         /* Controls hint */
         #controls-hint { position: absolute; top: 20px; left: 20px; font-size: 12px; color: rgba(255,255,255,0.5); pointer-events: none; line-height: 1.5; text-shadow: 1px 1px 2px black; }
 
         .tier-0 { color: #aaa; border-color: #555; } /* Junk */
         .tier-1 { color: #fff; border-color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.5); } /* Common */
-        .tier-2 { color: #4bf; border-color: #4bf; text-shadow: 0 0 5px rgba(68, 187, 255, 0.5); } /* Rare */
-        .tier-3 { color: #f82; border-color: #f82; text-shadow: 0 0 5px rgba(255, 136, 34, 0.5); } /* Legendary */
+        .tier-2 { color: #33ff33; border-color: #33ff33; text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); } /* Uncommon */
+        .tier-3 { color: #4bf; border-color: #4bf; text-shadow: 0 0 5px rgba(68, 187, 255, 0.5); } /* Rare */
+        .tier-4 { color: #aa33ff; border-color: #aa33ff; text-shadow: 0 0 5px rgba(170, 51, 255, 0.5); } /* Epic */
+        .tier-5 { color: #f82; border-color: #f82; text-shadow: 0 0 5px rgba(255, 136, 34, 0.5); } /* Legendary */
 
         /* Game Over */
         #game-over { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 200; pointer-events: auto;}
