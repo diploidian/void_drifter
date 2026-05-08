@@ -561,7 +561,7 @@ class Enemy {
         ctx.translate(p.x, p.y);
         ctx.scale(scale, scale);
         
-            if (this.type === 'chaser') {
+        if (this.type === 'chaser') {
             ctx.strokeStyle = 'rgba(255,0,85,0.2)';
             ctx.lineWidth = 1;
             ctx.beginPath(); ctx.arc(0,0,20,0,Math.PI*2); ctx.stroke();
@@ -574,7 +574,7 @@ class Enemy {
         ctx.strokeStyle = this.stunTimer > 0 ? '#ffff00' : this.color;
         ctx.lineWidth = 2;
 
-                if (this.type === 'chaser' && this.attackCombo > 0) {
+        if (this.type === 'chaser' && this.attackCombo > 0) {
             let comboColor = 'transparent';
             if (this.attackCombo === 1) comboColor = 'rgba(255,0,0,0.5)';
             else if (this.attackCombo === 2) comboColor = 'rgba(255,128,0,0.5)';
@@ -1089,8 +1089,14 @@ function updateUI() {
 
     let fuelCells = inventory.find(i => i && i.type === 'Fuel');
     let btnF = document.getElementById('skill-5');
-    if (!fuelCells) btnF.classList.add('no-energy');
-    else btnF.classList.remove('no-energy');
+    let fuelCountEl = document.getElementById('fuel-cell-count');
+    if (!fuelCells) {
+        btnF.classList.add('no-energy');
+        if (fuelCountEl) fuelCountEl.innerText = '0';
+    } else {
+        btnF.classList.remove('no-energy');
+        if (fuelCountEl) fuelCountEl.innerText = fuelCells.count;
+    }
 
     renderInventory();
     renderEquipment();
