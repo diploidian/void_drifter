@@ -224,7 +224,7 @@ const player = {
     statBreakdown: {},
     timers: { dodge: 0, shieldRegen: 0 },
     skills: [
-        { id: 1, name: 'Pulse Blaster', cost: 5, cd: 0, maxCd: 0.2, type: 'projectile' },
+        { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.2, type: 'projectile' },
         { id: 2, name: 'EMP Blast', cost: 30, cd: 0, maxCd: 5.0, type: 'aoe' },
         { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 3.0, type: 'dash', isFuel: true },
         { id: 4, name: 'Singularity Torpedo', cost: 50, cd: 0, maxCd: 10.0, type: 'special' }
@@ -461,7 +461,7 @@ class Asteroid {
 
 class Enemy {
     constructor(x, y) {
-        this.x = x; this.y = y; this.z = 1000; // Spawn from deep space
+        this.x = x; this.y = y; this.z = 500; // Spawn from deep space
         this.vx = 0; this.vy = 0; this.vz = -500; // Move up to z=0
         this.radius = 12;
         this.level = player.level;
@@ -469,7 +469,7 @@ class Enemy {
         // Scale HP and Damage with Level
         this.maxHp = 50 * (1 + (this.level - 1) * 0.3);
         this.hp = this.maxHp;
-        this.damage = 10 * (1 + (this.level - 1) * 0.2);
+        this.damage = 5 * (1 + (this.level - 1) * 0.2);
         
         this.speed = 150 + (this.level * 2); // get slightly faster
         this.attackTimer = 0;
@@ -503,7 +503,7 @@ class Enemy {
             // Melee attack
             if (dist < 20 + player.radius) {
                 if (this.attackTimer <= 0) {
-                    player.takeDamage(this.damage * 1.5, this); // Melee hits harder
+                    player.takeDamage(this.damage *1.15, this);
                     this.attackTimer = 1.0;
                     // bounce back slightly
                     this.vx = -Math.cos(angle) * this.speed * 2;
