@@ -296,7 +296,7 @@ const player = {
         }
         
         let fireRateBonus = totalFireRateRating > 0 ? getFireRateBonus(totalFireRateRating, this.level) : 0;
-        this.stats.fireRate = Math.max(BASE_STATS.fireRate, BASE_STATS.fireRate * (1 + fireRateBonus));
+        this.stats.fireRate = BASE_STATS.fireRate * (1 + fireRateBonus);
 
         // Maintain ratios
         this.stats.hp = Math.min(this.stats.maxHp, this.stats.maxHp * oldHpRatio);
@@ -537,10 +537,10 @@ class Enemy {
                 if (this.attackTimer <= 0) {
                     player.takeDamage(this.damage *1.15, this);
                     this.attackTimer = 1.0;
-                    this.chaserKnockbackTimer = 0.15;
+                    this.chaserKnockbackTimer = 0.2;
                     this.chaserSlowTimer = 1.2;
-                    this.knockbackVx = -Math.cos(angle) * this.speed * 8;
-                    this.knockbackVy = -Math.sin(angle) * this.speed * 8;
+                    this.knockbackVx = -Math.cos(angle) * this.speed * 15;
+                    this.knockbackVy = -Math.sin(angle) * this.speed * 15;
                     this.vx = this.knockbackVx;
                     this.vy = this.knockbackVy;
                     this.attackCombo++;
@@ -807,7 +807,10 @@ class Boss extends Enemy {
         if (super.takeDamage(amount, source)) {
             GAME.activeBoss = null;
             // Big loot explosion
-            for(let i=0; i<50; i++) xpOrbs.push(new XpOrb(this.x, this.y, 200));
+            let totalXp = 500 * this.level;
+            let numOrbs = 50;
+            let xpPerOrb = totalXp / numOrbs;
+            for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb));
             for(let i=0; i<10; i++) spawnDrop(this.x, this.y, true);
 
             let slots = [...SLOT_TYPES];
@@ -911,7 +914,6 @@ class Singularity {
 }
 
 class Drop {
-    constructor(x, y, forceResource = false) {
     constructor(x, y, forceResource = false, item = null) {
         this.x = x; this.y = y; this.z = 0;
         this.item = generateLoot(forceResource ? null : undefined);
@@ -1127,8 +1129,6 @@ function createFloatingText(text, x, y, color, life = 1.0, isLoot = false, isDam
     floatingTexts.push(new FloatingText(text, x, y, color, life, isLoot, isDamage));
 }
 
-function spawnDrop(x, y, forceResource = false) {
-    drops.push(new Drop(x, y, forceResource));
 function spawnDrop(x, y, forceResource = false, item = null) {
     drops.push(new Drop(x, y, forceResource, item));
 }
@@ -1964,3 +1964,4 @@ inventory[0] = {
     desc: 'Restores 5 Fuel on use.'
 };
 requestAnimationFrame(t => { GAME.lastTime = t; loop(t); });
+}
