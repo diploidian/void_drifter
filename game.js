@@ -50,6 +50,16 @@ window.addEventListener('resize', () => {
     ch = canvas.height = window.innerHeight;
 });
 
+const AUDIO_CACHE = {};
+function playSound(file, volume = 0.5) {
+    if(!AUDIO_CACHE[file]) {
+        AUDIO_CACHE[file] = new Audio(file);
+    }
+    let audio = AUDIO_CACHE[file].cloneNode();
+    audio.volume = volume;
+    audio.play().catch(e => {}); // Catch play-prevention to avoid error spam
+}
+
 /** ==========================================
  * ICONS & SVG GENERATION
  * ========================================== */
@@ -203,7 +213,8 @@ function generateLoot(type = null, tierLevel = -1) {
     if (tierLevel === 5) {
         if (type === 'Primary Weapon') { item.perk = 'Triple Shot'; item.statLines.push(`[PERK] Shoots 3 bullets in a cone`); }
         if (type === 'Secondary Weapon') { item.perk = 'Explosive Enemies'; item.statLines.push(`[PERK] Enemies explode on death`); }
-        if (type === 'Hull') { item.perk = 'Repairis'; item.statLines.push(`[PERK] Regenerates 1% Max HP/sec`); }
+        if (type === 'Hull') { item.perk = 'Repairis'; item.statLines.push(`[PERK] Regenerates 1% Max HP every 2s`); }
+        if (type === 'Hull') { item.perk = 'Repairis'; item.statLines.push(`[PERK] Regenerates 1% Max HP every 2s`); }
         if (type === 'Shields') { item.perkReflect = MathUtils.randInt(10, 20); item.perk = 'Reflect'; item.statLines.push(`[PERK] Reflects ${item.perkReflect}% damage`); }
         if (type === 'Engine') { item.perk = 'Fuel Efficiency'; item.statLines.push(`[PERK] 25% better fuel efficiency`); }
         if (type === 'Reactor') { item.perk = 'XP Boost'; item.statLines.push(`[PERK] +15% XP & Orb pull range`); }
@@ -351,6 +362,7 @@ const player = {
             source.takeDamage(amount * (equipment['Shields'].perkReflect / 100), this);
         }
         
+        let oldHp = this.stats.hp;
         if (actualDamage > 0) {
             this.stats.hp -= actualDamage;
             createParticles(this.x, this.y, 0, 10, '#ff3366');
@@ -358,6 +370,11 @@ const player = {
             // Damage text over character
             createFloatingText("-" + Math.floor(actualDamage), this.x, this.y, '#ff3366', 1.5, false, true);
             
+            // Low HP sound trigger (triggers upon dropping to 25% or less)
+            if (this.stats.hp > 0 && this.stats.hp <= this.stats.maxHp * 0.25 && oldHp > this.stats.maxHp * 0.25) {
+                playSound('spaceEngine_000.ogg');
+            }
+
             // Screen Glow intensity increase
             let dmgRatio = actualDamage / this.stats.maxHp;
             this.damageIntensity = Math.min(1.0, this.damageIntensity + dmgRatio * 2.5);
@@ -481,14 +498,6 @@ class Asteroid {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
         if(this.hp <= 0) {
             this.dead = true;
-            if (source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies') {
-                createParticles(this.x, this.y, this.z, 50, '#ffaa00');
-                for(let other of entities) {
-                    if (other instanceof Enemy && !other.dead && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 400) {
-                        other.takeDamage(getDamage(player), player, '#ffaa00'); 
-                    }
-                }
-            }
 
             createParticles(this.x, this.y, this.z, 20, '#555');
             // Drop loot
@@ -525,12 +534,24 @@ class Enemy {
         this.attackTimer = 0;
         this.stunTimer = 0;
         this.type = Math.random() < 0.7 ? 'chaser' : 'shooter';
-        if (this.type === 'chaser') {
+        if (this.speed *= 0.8;
+            this.type === 'chaser') {
+            this.speed *= 0.8;
             this.attackCombo = 0;
             this.chaserKnockbackTimer = 0;
-            this.chaserSlowTimer = 0;
+            this.chaserSlowT = 0;
+        } else {
+            this.orbitDir = Math.random() < 0.5 ? 1 : -1;
+            this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
+            this.rapidShotsToFire = 0;
+  i         this.rapidShotInterval mer = 0;
             this.knockbackVx = 0;
             this.knockbackVy = 0;
+        } else {
+            this.orbitDir = Math.random() < 0.5 ? 1 : -1;
+            this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
+            this.rapidShotsToFire = 0;
+            this.rapidShotInterval = 0;
         }
         this.color = this.type === 'chaser' ? '#ff0055' : '#00ffcc';
     }
@@ -546,8 +567,11 @@ class Enemy {
             this.stunTimer -= dt;
             return;
         }
-
-        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
+le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
+                let spiralAngle = progress * Math.PI * 6;
+                let wobble = Math.sin(spiralAngle) * 800;
+                this. + (-this.knockbackVy / 500) * wobble
+        let dist = MathUtils.distance(this + (this.knockbackVx / 500) * wobble.x, this.y, player.x, player.y);
         let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
         
         if (this.type === 'chaser') {
@@ -555,13 +579,18 @@ class Enemy {
                 this.chaserKnockbackTimer -= dt;
                 this.vx = this.knockbackVx;
                 this.vy = this.knockbackVy;
+                let progress = 1.0 - (this.chaserKnockbackTimer / 0.2);
+                let spiralAngle = progress * Math.PI * 6;
+                let wobble = Math.sin(spiralAngle) * 800;
+                this.vx = this.knockbackVx + (-this.knockbackVy / 500) * wobble;
+                this.vy = this.knockbackVy + (this.knockbackVx / 500) * wobble;
             } else {
                 let speedMult = 1.0;
                 if (this.chaserSlowTimer > 0) {
                     this.chaserSlowTimer -= dt;
                     speedMult = 0.05 + 0.95 * (1.0 - (this.chaserSlowTimer / 1.2));
-                }
-                this.vx = Math.cos(angle) * this.speed * speedMult;
+                }00
+                this.vx = Math.cos(angle) * this.speed * s00
                 this.vy = Math.sin(angle) * this.speed * speedMult;
             }
             
@@ -574,6 +603,8 @@ class Enemy {
                     this.chaserSlowTimer = 1.2;
                     this.knockbackVx = -Math.cos(angle) * this.speed * 15;
                     this.knockbackVy = -Math.sin(angle) * this.speed * 15;
+                    this.knockbackVx = -Math.cos(angle) * 500;
+                    this.knockbackVy = -Math.sin(angle) * 500;
                     this.vx = this.knockbackVx;
                     this.vy = this.knockbackVy;
                     this.attackCombo++;
@@ -593,10 +624,27 @@ class Enemy {
                         return true; // Despawn without dropping loot/xp
                     } else {
                         player.takeDamage(getDamage(this), this);
-                    }
-                    this.attackTimer = 1.0 / 1.5;
-                }
+                    } = Math.cos(angle + Math.PI / 2 * this.orbitDir) * this.speed * 0.5;
+                this.vy Math.sin(angle + Math.PI / 2 * this.orbitDir) * this.speed *.5
             }
+            
+           if (rapidShotsToFire > 0) {
+                if (this.rapidShotInteral <= 0) {
+                    projectiles.push(new Projectile(this.x, this., angle, 300, getDamage(this), false, this.color, this));
+                    this.rapidShotsToFire--;
+                   this.rapidShotInterval .2 // 0.2s between rapid shots
+                  else {       this.attackTimer = 1.0 / 1.5;
+                    this.rapidShotInterval -= dt;    }
+                }
+            } else }rpidShoTimer <= 0) {
+                his.rpidShotsToFire = 3;
+                this.rapidShotInterval = 0;
+                this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
+            } else {
+                this.rapidShotTimer -= dt;
+            }
+            
+            if (this.atta0 && this.rapidShotsToFire === 
         } else {
         
             // Shooter keeps distance
@@ -608,9 +656,28 @@ class Enemy {
                 this.vy = -Math.sin(angle) * this.speed;
             } else {
                 this.vx = 0; this.vy = 0;
+                this.vx = Math.cos(angle + Math.PI / 2 * this.orbitDir) * this.speed * 0.5;
+                this.vy = Math.sin(angle + Math.PI / 2 * this.orbitDir) * this.speed * 0.5;
             }
             
             if (this.attackTimer <= 0 && dist < 400) {
+            if (this.rapidShotsToFire > 0) {
+                if (this.rapidShotInterval <= 0) {
+                    projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
+                    this.rapidShotsToFire--;
+                    this.rapidShotInterval = 0.2; // 0.2s between rapid shots
+                } else {
+                    this.rapidShotInterval -= dt;
+                }
+            } else if (this.rapidShotTimer <= 0) {
+                this.rapidShotsToFire = 3;
+                this.rapidShotInterval = 0;
+                this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
+            } else {
+                this.rapidShotTimer -= dt;
+            }
+            
+            if (this.attackTimer <= 0 && dist < 400 && this.rapidShotsToFire === 0) {
                 // Shoot player
                 projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
                 this.attackTimer = 2.0;
@@ -644,7 +711,7 @@ class Enemy {
         ctx.lineWidth = 2;
 
         if (this.type === 'chaser' && this.attackCombo > 0) {
-            let comboColor = 'transparent';
+            let comboColor = 'transparent'; * 0.5
             if (this.attackCombo === 1) comboColor = 'rgba(255,0,0,0.5)';
             else if (this.attackCombo === 2) comboColor = 'rgba(255,128,0,0.5)';
             else if (this.attackCombo === 3) {
@@ -676,8 +743,9 @@ class Enemy {
             if (source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies') {
                 createParticles(this.x, this.y, this.z, 50, '#ffaa00');
                 for(let other of entities) {
-                    if (other instanceof Enemy && !other.dead && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 400) {
+                    if (other instanceof Enemy && !other.dead && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 200) {
                         other.takeDamage(getDamage(player), player, '#ffaa00'); 
+                        other.takeDamage(getDamage(player) * 0.5, player, '#ffaa00'); 
                     }
                 }
             }
@@ -1544,6 +1612,7 @@ function useItem(index) {
     if(!item) return;
 
     if (item.type === 'Fuel') {
+        playSound('impactMetal_004.ogg');
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + 5);
         item.count--;
         if(item.count <= 0) inventory[index] = null;
@@ -1717,6 +1786,7 @@ function toggleInventory() {
 }
 
 function die() {
+    playSound('explosionCrunch_003.ogg');
     GAME.state = 'DEAD';
     document.getElementById('game-over').style.display = 'flex';
 }
@@ -1753,14 +1823,17 @@ function useSkill(index) {
     if(index === 0) { // Pulse Blaster
         let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
         if (hasTriple) {
+            playSound('laserLarge_001.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
+            playSound('laserSmall_004.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
-    else if(index === 1) { // EMP
+    else if(index === 1) { // EMP05
+        playSound('spaceEngine_002.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
@@ -1772,6 +1845,7 @@ function useSkill(index) {
         }
     }
     else if(index === 2) { // Warp Dash
+        playSound('doorOpen_002.ogg');
         // Reduced 40% (500 -> 300)
         let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
         let oldX = player.x, oldY = player.y;
@@ -1781,6 +1855,7 @@ function useSkill(index) {
         warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, getDamage(player), varColor('--energy')));
     }
     else if(index === 3) { // Singularity
+        playSound('engineCircular_000.ogg');
         player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
         entities.push(player.activeSingularity);
     }
@@ -1792,6 +1867,7 @@ function update(dt) {
 
     if (equipment['Hull'] && equipment['Hull'].perk === 'Repairis') {
         player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.01) * dt);
+        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.005) * dt);
     }
 
     // --- Player Movement & Physics ---
@@ -1882,6 +1958,9 @@ function update(dt) {
         player.stats.shields = Math.min(player.stats.maxShields, player.stats.shields + player.stats.shieldRegen * dt);
     } else {
         player.timers.shieldRegen -= dt;
+        if(player.timers.shieldRegen <= 0 && player.stats.shields < player.stats.maxShields) {
+            playSound('forceField_002.ogg');
+        }
     }
 
     for(let i=0; i<4; i++) {
@@ -2144,6 +2223,7 @@ window.addEventListener('wheel', e => {
 function useFuelCell() {
     let idx = inventory.findIndex(i => i && i.type === 'Fuel');
     if (idx !== -1) {
+        playSound('impactMetal_004.ogg');
         let item = inventory[idx];
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + 12);
         item.count--;
