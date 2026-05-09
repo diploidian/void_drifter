@@ -253,8 +253,6 @@ const player = {
             this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + this.stats.maxHp * 0.25);
             for(let s of this.skills) s.cd = 0;
             
-            this.skills[0].cost = Math.floor(5 * (1 + 0.2 * (this.level - 1)));
-            
             createFloatingText("LEVEL UP!", this.x, this.y - 30, '#00ff66', 2.5, false, false);
             if (this.level >= 5 && !GAME.bossSpawned) {
                 spawnBoss();
