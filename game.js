@@ -10,6 +10,14 @@ const MathUtils = {
     clamp: (val, min, max) => Math.max(min, Math.min(max, val))
 };
 
+function getDamage(source) {
+    let dmg = source.stats ? source.stats.damage : source.damage;
+    if (typeof dmg === 'object') {
+        return MathUtils.rand(dmg.min, dmg.max);
+    }
+    return dmg;
+}
+
 /** ==========================================
  * GAME CONSTANTS & GLOBALS
  * ========================================== */
@@ -89,7 +97,7 @@ const TIERS = [
 const ITEM_TEMPLATES = {
     'Primary Weapon': { names: ['Pulse Laser', 'Plasma Repeater', 'Ion Cannon'], stats: ['damage'] },
     'Secondary Weapon': { names: ['Missile Pod', 'Flak Burst', 'Railgun'], stats: ['damage'] },
-    'Hull': { names: ['Titanium Plating', 'Ablative Armor', 'Nanite Shell'], stats: ['maxHp', 'armor'] },
+    'Hull': { names: ['Titanium Plating', 'Ablative Armor', 'Nanite Shell'], stats: ['maxHp', 'armorRating'] },
     'Shields': { names: ['Deflector Array', 'Plasma Bubble', 'Phase Shield'], stats: ['maxShields', 'shieldRegen'] },
     'Engine': { names: ['Ion Thruster', 'Plasma Drive', 'Warp Core'], stats: ['maxSpeed', 'acceleration'] },
     'Reactor': { names: ['Fusion Core', 'Antimatter Cell', 'Zero-Point Module'], stats: ['maxEnergy', 'energyRegen'] }
@@ -97,6 +105,10 @@ const ITEM_TEMPLATES = {
 
 function getFireRateBonus(rating, level) {
     return Math.max(0, rating / (rating + 130 + level * 50));
+}
+
+function getArmorReduction(rating, level) {
+    return Math.max(0, rating / (rating + 250 + level * 50));
 }
 
 function generateLoot(type = null, tierLevel = -1) {
@@ -138,7 +150,7 @@ function generateLoot(type = null, tierLevel = -1) {
     
     let availableStats = [...template.stats, 'fireRateRating'];
     if (type === 'Primary Weapon' || type === 'Secondary Weapon') availableStats.push('damage', 'critChance');
-    else if (type === 'Hull') availableStats.push('maxHp', 'armor');
+    else if (type === 'Hull') availableStats.push('maxHp', 'armorRating');
     else if (type === 'Shields') availableStats.push('maxShields', 'shieldRegen');
     else if (type === 'Engine') availableStats.push('maxSpeed', 'acceleration');
     else if (type === 'Reactor') availableStats.push('maxEnergy', 'energyRegen');
@@ -153,12 +165,18 @@ function generateLoot(type = null, tierLevel = -1) {
     }
 
     for (let stat of pickedStats) {
-        let val = 0; let str = '';
+        let val = 0; let str = ''; let isObj = false;
         if (stat === 'fireRateRating') { val = Math.floor(MathUtils.rand(10, 25) * tier.mult); str = `+${val} Fire Rate Rating`; }
-        else if (stat === 'damage') { val = Math.floor(MathUtils.rand(10, 20) * tier.mult * lvlMult); str = `+${val} Damage`; }
+        else if (stat === 'damage') { 
+            let avgDmg = MathUtils.rand(10, 20) * tier.mult * lvlMult;
+            let spread = Math.max(1, 6 - tierLevel) * 2; // Tighter spread for better tiers
+            let min = Math.max(1, Math.floor(avgDmg - spread/2));
+            let max = Math.floor(avgDmg + spread/2);
+            val = { min, max }; str = `+${min}-${max} Damage`; isObj = true;
+        }
         else if (stat === 'critChance') { val = Math.floor(MathUtils.rand(2, 5) * tier.mult); str = `+${val}% Crit Chance`; }
         else if (stat === 'maxHp') { val = Math.floor(MathUtils.rand(20, 50) * tier.mult * lvlMult); str = `+${val} Max HP`; }
-        else if (stat === 'armor') { val = Math.floor(MathUtils.rand(2, 10) * tier.mult * lvlMult); str = `+${val} Armor`; }
+        else if (stat === 'armorRating') { val = Math.floor(MathUtils.rand(20, 30) * Math.pow(tier.mult, 2) * lvlMult); str = `+${val} Armor Rating`; }
         else if (stat === 'maxShields') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult); str = `+${val} Max Shields`; }
         else if (stat === 'shieldRegen') { val = Math.floor(MathUtils.rand(2, 8) * tier.mult * lvlMult); str = `+${val} Shield/sec`; }
         else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(50, 150) * tier.mult * lvlMult); str = `+${val} Max Speed`; }
@@ -166,7 +184,7 @@ function generateLoot(type = null, tierLevel = -1) {
         else if (stat === 'maxEnergy') { val = Math.floor(MathUtils.rand(20, 60) * tier.mult * lvlMult); str = `+${val} Max Energy`; }
         else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
         
-        if (val > 0) { stats[stat] = val; statLines.push(str); }
+        if (isObj || val > 0) { stats[stat] = val; statLines.push(str); }
     }
 
     let item = {
@@ -174,6 +192,7 @@ function generateLoot(type = null, tierLevel = -1) {
         name: name,
         type: type,
         tier: tierLevel,
+        itemLevel: player.level,
         stackable: false,
         count: 1,
         stats: stats,
@@ -209,12 +228,12 @@ let equipment = {
 
 // Base stats
 const BASE_STATS = {
-    maxHp: 100, hp: 100, armor: 0,
+    maxHp: 100, hp: 100, armorRating: 0, damageReduction: 0,
     maxShields: 50, shields: 50, shieldRegen: 5,
     maxEnergy: 100, energy: 100, energyRegen: 10,
     maxFuel: 100, fuel: 100,
     maxSpeed: 300, acceleration: 400, friction: 0.95,
-    damage: 10, fireRate: 100
+    damage: { min: 9, max: 13 }, fireRate: 100
 };
 
 const player = {
@@ -247,7 +266,8 @@ const player = {
             
             // Level Up Rewards
             BASE_STATS.maxHp += 20;
-            BASE_STATS.damage += 2;
+            BASE_STATS.damage.min += 1;
+            BASE_STATS.damage.max += 2;
             
             // Heal 25% on level up and reset CD
             this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + this.stats.maxHp * 0.25);
@@ -269,7 +289,7 @@ const player = {
         let oldShieldRatio = this.stats.shields / (this.stats.maxShields || 1);
         let oldEnRatio = this.stats.energy / this.stats.maxEnergy;
 
-        this.stats = { ...BASE_STATS };
+        this.stats = { ...BASE_STATS, damage: { min: BASE_STATS.damage.min, max: BASE_STATS.damage.max } };
         this.statBreakdown = {};
         for(let key in BASE_STATS) {
             this.statBreakdown[key] = { base: BASE_STATS[key], items: [] };
@@ -285,6 +305,10 @@ const player = {
                     if (stat === 'fireRateRating') {
                         totalFireRateRating += item.stats[stat];
                         this.statBreakdown['fireRate'].items.push({ name: item.name, val: item.stats[stat] + ' Rating' });
+                    } else if (stat === 'damage') {
+                        this.stats.damage.min += item.stats[stat].min;
+                        this.stats.damage.max += item.stats[stat].max;
+                        this.statBreakdown[stat].items.push({ name: item.name, val: `${item.stats[stat].min}-${item.stats[stat].max}` });
                     } else if(this.stats[stat] !== undefined) {
                         this.stats[stat] += item.stats[stat];
                         this.statBreakdown[stat].items.push({ name: item.name, val: item.stats[stat] });
@@ -296,11 +320,14 @@ const player = {
         let fireRateBonus = totalFireRateRating > 0 ? getFireRateBonus(totalFireRateRating, this.level) : 0;
         this.stats.fireRate = BASE_STATS.fireRate * (1 + fireRateBonus);
 
+        this.stats.damageReduction = this.stats.armorRating > 0 ? getArmorReduction(this.stats.armorRating, this.level) : 0;
+
         // Maintain ratios
         this.stats.hp = Math.min(this.stats.maxHp, this.stats.maxHp * oldHpRatio);
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
+        this.skills[0].cost = 2 + Math.floor(0.01 * this.stats.maxEnergy * (this.level - 1));
         // 100 fire rate = 0.25s.
         this.skills[0].maxCd = 0.25 / (this.stats.fireRate / 100);
         
@@ -308,7 +335,8 @@ const player = {
     },
     
     takeDamage(amount, source) {
-        let actualDamage = Math.max(1, amount - this.stats.armor);
+        let actualDamage = amount * (1 - this.stats.damageReduction);
+        actualDamage = Math.max(1, actualDamage);
         if (this.stats.shields > 0) {
             if (this.stats.shields >= actualDamage) {
                 this.stats.shields -= actualDamage;
@@ -353,6 +381,8 @@ let projectiles = [];
 let drops = [];
 let floatingTexts = [];
 let xpOrbs = [];
+let shockwaves = [];
+let warpTrails = [];
 
 class Asteroid {
     constructor(x, y, radius) {
@@ -361,6 +391,7 @@ class Asteroid {
         this.radius = radius;
         this.hp = radius * 2;
         this.maxHp = this.hp;
+        this.dead = false;
         this.points = [];
         let numPoints = MathUtils.randInt(7, 12);
         for(let i=0; i<numPoints; i++) {
@@ -444,14 +475,17 @@ class Asteroid {
         
         ctx.restore();
     }
-    takeDamage(amount, source) {
+    takeDamage(amount, source, color = '#fff') {
+        if (this.dead) return false;
         this.hp -= amount;
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
         if(this.hp <= 0) {
+            this.dead = true;
             if (source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies') {
                 createParticles(this.x, this.y, this.z, 50, '#ffaa00');
                 for(let other of entities) {
-                    if (other instanceof Enemy && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 400) {
-                        other.takeDamage(player.stats.damage, player); 
+                    if (other instanceof Enemy && !other.dead && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 400) {
+                        other.takeDamage(getDamage(player), player, '#ffaa00'); 
                     }
                 }
             }
@@ -485,6 +519,7 @@ class Enemy {
         this.maxHp = 50 * (1 + (this.level - 1) * 0.3);
         this.hp = this.maxHp;
         this.damage = 5 * (1 + (this.level - 1) * 0.2);
+        this.dead = false;
         
         this.speed = 150 + (this.level * 2); // get slightly faster
         this.attackTimer = 0;
@@ -533,7 +568,7 @@ class Enemy {
             // Melee attack
             if (dist < 20 + player.radius) {
                 if (this.attackTimer <= 0) {
-                    player.takeDamage(this.damage *1.15, this);
+                    player.takeDamage(getDamage(this) * 1.15, this);
                     this.attackTimer = 1.0;
                     this.chaserKnockbackTimer = 0.2;
                     this.chaserSlowTimer = 1.2;
@@ -543,20 +578,21 @@ class Enemy {
                     this.vy = this.knockbackVy;
                     this.attackCombo++;
                     if (this.attackCombo >= 4) {
-                        let aoeDmg = (this.damage * 3) / 2;
+                        let aoeDmg = (getDamage(this) * 3) / 2;
                         player.takeDamage(aoeDmg, this);
                         
                         for (let e of entities) {
-                            if (e instanceof Enemy && e !== this) {
+                            if (e instanceof Enemy && !e.dead && e !== this) {
                                 if (MathUtils.distance(this.x, this.y, e.x, e.y) <= 35 + e.radius) {
                                     e.takeDamage(aoeDmg / 2, this);
                                 }
                             }
                         }
                         createParticles(this.x, this.y, this.z, 50, '#ff8800');
+                        this.dead = true;
                         return true; // Despawn without dropping loot/xp
                     } else {
-                        player.takeDamage(this.damage, this);
+                        player.takeDamage(getDamage(this), this);
                     }
                     this.attackTimer = 1.0 / 1.5;
                 }
@@ -576,7 +612,7 @@ class Enemy {
             
             if (this.attackTimer <= 0 && dist < 400) {
                 // Shoot player
-                projectiles.push(new Projectile(this.x, this.y, angle, 300, this.damage, false, this.color, this));
+                projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
                 this.attackTimer = 2.0;
             }
         }
@@ -631,15 +667,17 @@ class Enemy {
         
         ctx.restore();
     }
-    takeDamage(amount, source) {
+    takeDamage(amount, source, color = '#fff') {
+        if (this.dead) return false;
         this.hp -= amount;
-        createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, '#fff', 1.0, false, true);
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
         if(this.hp <= 0) {
+            this.dead = true;
             if (source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies') {
                 createParticles(this.x, this.y, this.z, 50, '#ffaa00');
                 for(let other of entities) {
-                    if (other instanceof Enemy && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 400) {
-                        other.takeDamage(player.stats.damage, player); 
+                    if (other instanceof Enemy && !other.dead && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 400) {
+                        other.takeDamage(getDamage(player), player, '#ffaa00'); 
                     }
                 }
             }
@@ -660,7 +698,7 @@ class Enemy {
 }
 
 class Projectile {
-    constructor(x, y, angle, speed, damage, isPlayer, color, source) {
+    constructor(x, y, angle, speed, damage, isPlayer, color, source, type = 'bullet') {
         this.x = x; this.y = y; this.z = 0;
         this.vx = Math.cos(angle) * speed;
         this.vy = Math.sin(angle) * speed;
@@ -668,6 +706,7 @@ class Projectile {
         this.isPlayer = isPlayer;
         this.color = color;
         this.source = source;
+        this.type = type;
         this.life = 2.0;
     }
     update(dt) {
@@ -676,17 +715,18 @@ class Projectile {
         this.life -= dt;
         
         // Particles trail
-        if(Math.random() < 0.3) createParticles(this.x, this.y, 0, 1, this.color, 0.5);
+        if(this.type !== 'bullet' && Math.random() < 0.3) createParticles(this.x, this.y, 0, 1, this.color, 0.5);
 
         // Collisions
         if(this.isPlayer) {
             for(let i=entities.length-1; i>=0; i--) {
                 let e = entities[i];
                 if(e.z > 0) continue; // ignore spawning entities
-                if(MathUtils.distance(this.x, this.y, e.x, e.y) < e.radius) {
-                    if (typeof e.takeDamage === 'function') {
-                        if(e.takeDamage(this.damage, this.source)) entities.splice(i, 1);
-                        createParticles(this.x, this.y, 0, 5, this.color);
+                if(MathUtils.distance(this.x, this.y, e.x, e.y) < e.radius && !e.dead) {
+                    if (typeof e.takeDamage === 'function' && !e.dead) {
+                        e.takeDamage(this.damage, this.source, this.color);
+                        if (this.type === 'bullet') shockwaves.push(new Shockwave(this.x, this.y, this.z, this.color));
+                        else createParticles(this.x, this.y, 0, 5, this.color);
                         return true; // destroy projectile
                     }
                 }
@@ -694,7 +734,8 @@ class Projectile {
         } else {
             if(MathUtils.distance(this.x, this.y, player.x, player.y) < player.radius) {
                 player.takeDamage(this.damage, this.source);
-                createParticles(this.x, this.y, 0, 5, this.color);
+                if (this.type === 'bullet') shockwaves.push(new Shockwave(this.x, this.y, this.z, this.color));
+                else createParticles(this.x, this.y, 0, 5, this.color);
                 return true;
             }
         }
@@ -706,7 +747,19 @@ class Projectile {
         ctx.fillStyle = this.color;
         ctx.shadowBlur = 10;
         ctx.shadowColor = this.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 3 * getScale(this.z), 0, Math.PI*2); ctx.fill();
+        
+        if (this.type === 'bullet' && (this.vx !== 0 || this.vy !== 0)) {
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(Math.atan2(this.vy, this.vx));
+            let s = getScale(this.z);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 8 * s, 2 * s, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        } else {
+            ctx.beginPath(); ctx.arc(p.x, p.y, 3 * getScale(this.z), 0, Math.PI*2); ctx.fill();
+        }
         ctx.shadowBlur = 0;
     }
 }
@@ -716,7 +769,7 @@ class Boss extends Enemy {
         super(x, y);
         this.radius = 40;
         this.level = player.level;
-        this.maxHp = 2000 * (1 + (this.level - 1) * 0.5);
+        this.maxHp = 800 * (1 + (this.level - 1) * 0.5);
         this.hp = this.maxHp;
         this.damage = 50 * (1 + (this.level - 1) * 0.3);
         this.speed = 100;
@@ -751,7 +804,7 @@ class Boss extends Enemy {
         if (charge.active) {
             charge.duration -= dt;
             if (charge.duration <= 0) charge.active = false;
-            if (dist < this.radius + player.radius) player.takeDamage(this.damage * 3, this);
+            if (dist < this.radius + player.radius) player.takeDamage(getDamage(this) * 3, this);
         } else if (charge.cd <= 0 && dist > 200 && dist < 800) {
             charge.active = true;
             charge.duration = 1.5;
@@ -763,7 +816,7 @@ class Boss extends Enemy {
         let barrage = this.abilities[1];
         if (barrage.cd <= 0) {
             for(let i=-3; i<=3; i++) {
-                projectiles.push(new Projectile(this.x, this.y, angle + i * (Math.PI/16), 400, this.damage * 0.8, false, '#ff8800', this));
+                projectiles.push(new Projectile(this.x, this.y, angle + i * (Math.PI/16), 400, getDamage(this) * 0.8, false, '#ff8800', this));
             }
             barrage.cd = barrage.maxCd;
         }
@@ -801,8 +854,8 @@ class Boss extends Enemy {
         }
     }
 
-    takeDamage(amount, source) {
-        if (super.takeDamage(amount, source)) {
+    takeDamage(amount, source, color = '#fff') {
+        if (super.takeDamage(amount, source, color)) {
             GAME.activeBoss = null;
             // Big loot explosion
             let totalXp = 500 * this.level;
@@ -833,6 +886,7 @@ class Singularity {
         this.state = 'moving'; // moving, blackhole
         this.timer = 3.0; // blackhole duration
         this.radius = 0;
+        this.tickTimer = 0;
     }
     update(dt) {
         if (this.state === 'moving') {
@@ -848,16 +902,27 @@ class Singularity {
             
             // Suck entities
             for(let e of entities) {
+                if (e === this) continue;
                 let d = MathUtils.distance(this.x, this.y, e.x, e.y);
                 if (d < this.radius && e.z <= 0) {
                     let ang = MathUtils.angle(e.x, e.y, this.x, this.y);
                     let pull = (this.radius - d) * 2;
                     e.x += Math.cos(ang) * pull * dt;
                     e.y += Math.sin(ang) * pull * dt;
-                    if(e instanceof Enemy) e.takeDamage(player.stats.damage * dt, player); // dot damage scaling with player
                 }
             }
             
+            // Tick Damage
+            this.tickTimer -= dt;
+            if (this.tickTimer <= 0) {
+                this.tickTimer = 0.25;
+                for(let e of entities) {
+                    if (e instanceof Enemy && !e.dead && e.z <= 0 && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
+                        e.takeDamage(getDamage(player) * 0.25, player, '#9933ff');
+                    }
+                }
+            }
+
             // Sucks drops too
             for(let d of drops) {
                 let dist = MathUtils.distance(this.x, this.y, d.x, d.y);
@@ -873,12 +938,9 @@ class Singularity {
             if (this.timer <= 0) {
                 // Explode
                 createParticles(this.x, this.y, 0, 100, '#9933ff');
-                for(let i=entities.length-1; i>=0; i--) {
-                    let e = entities[i];
-                    if (MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        if (typeof e.takeDamage === 'function') {
-                            if(e.takeDamage(player.stats.damage * 20, player)) entities.splice(i, 1);
-                        }
+                for(let e of entities) {
+                    if (!e.dead && (e instanceof Enemy || e instanceof Asteroid) && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
+                        e.takeDamage(getDamage(player) * 20, player, '#9933ff');
                     }
                 }
                 if (player.activeSingularity === this) {
@@ -908,6 +970,62 @@ class Singularity {
             ctx.strokeStyle = `rgba(153, 51, 255, ${Math.random()})`;
             ctx.beginPath(); ctx.arc(p.x, p.y, this.radius*s, 0, Math.PI*2); ctx.stroke();
         }
+    }
+}
+
+class WarpTrail {
+    constructor(x1, y1, x2, y2, width, dps, color) {
+        this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
+        this.z = 0;
+        this.width = width;
+        this.dps = dps;
+        this.color = color;
+        this.life = 1.5;
+        this.maxLife = 1.5;
+        this.dx = x2 - x1;
+        this.dy = y2 - y1;
+        this.len2 = this.dx * this.dx + this.dy * this.dy;
+        this.tickTimer = 0;
+    }
+    update(dt) {
+        this.life -= dt;
+        
+        // Spawn lightning particles
+        if (this.len2 > 0) {
+            let spawnCount = Math.floor(Math.sqrt(this.len2) / 50); 
+            for (let i = 0; i < spawnCount; i++) {
+                if (Math.random() < dt * 15) {
+                    let t = Math.random();
+                    let px = this.x1 + this.dx * t;
+                    let py = this.y1 + this.dy * t;
+                    let colors = ['#ff00ff', '#ff66ff', '#cc00ff'];
+                    let offsetX = MathUtils.rand(-this.width/2.5, this.width/2.5);
+                    let offsetY = MathUtils.rand(-this.width/2.5, this.width/2.5);
+                    particles.push(new Particle(px + offsetX, py + offsetY, 0, colors[MathUtils.randInt(0, 2)], MathUtils.rand(0.1, 0.3), 'lightning'));
+                }
+            }
+        }
+
+        this.tickTimer -= dt;
+        if (this.len2 > 0 && this.tickTimer <= 0) {
+            this.tickTimer = 0.25; // apply 25% of DPS every 0.25s
+            for (let i = entities.length - 1; i >= 0; i--) {
+                let e = entities[i];
+                if (e instanceof Enemy && !e.dead && e.z <= 0) {
+                    let t = Math.max(0, Math.min(1, ((e.x - this.x1)*this.dx + (e.y - this.y1)*this.dy) / this.len2));
+                    let projX = this.x1 + t * this.dx;
+                    let projY = this.y1 + t * this.dy;
+                    let dist = MathUtils.distance(e.x, e.y, projX, projY);
+                    if (dist < (this.width / 2) + e.radius) {
+                        e.takeDamage(this.dps * 0.25, player, this.color);
+                    }
+                }
+            }
+        }
+        return this.life <= 0;
+    }
+    draw(ctx) {
+        // The trail visual is driven by spawned particles, so the base entity doesn't need to draw
     }
 }
 
@@ -1027,7 +1145,7 @@ class XpOrb {
 }
 
 class Particle {
-    constructor(x, y, z, color, life = 1.0) {
+    constructor(x, y, z, color, life = 1.0, type = 'normal') {
         this.x = x; this.y = y; this.z = z;
         this.vx = MathUtils.rand(-100, 100);
         this.vy = MathUtils.rand(-100, 100);
@@ -1035,6 +1153,19 @@ class Particle {
         this.color = color;
         this.life = life;
         this.maxLife = life;
+        this.type = type;
+
+        if (this.type === 'lightning') {
+            this.vx = 0; this.vy = 0; this.vz = 0;
+            this.points = [{x: 0, y: 0}];
+            let curX = 0, curY = 0;
+            let segments = MathUtils.randInt(2, 5);
+            for(let i=0; i<segments; i++) {
+                curX += MathUtils.rand(-15, 15);
+                curY += MathUtils.rand(-15, 15);
+                this.points.push({x: curX, y: curY});
+            }
+        }
     }
     update(dt) {
         this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
@@ -1047,7 +1178,20 @@ class Particle {
         let s = getScale(this.z);
         ctx.fillStyle = this.color;
         ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
-        ctx.beginPath(); ctx.arc(p.x, p.y, 2*s, 0, Math.PI*2); ctx.fill();
+        
+        if (this.type === 'lightning') {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 2 * s;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            for(let i=1; i<this.points.length; i++) {
+                ctx.lineTo(p.x + this.points[i].x * s, p.y + this.points[i].y * s);
+            }
+            ctx.stroke();
+        } else {
+            ctx.beginPath(); ctx.arc(p.x, p.y, 2*s, 0, Math.PI*2); ctx.fill();
+        }
+        
         ctx.globalAlpha = 1.0;
     }
 }
@@ -1115,6 +1259,31 @@ class FloatingText {
             ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
             ctx.shadowBlur = 0;
         }
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+class Shockwave {
+    constructor(x, y, z, color, maxRadius=30) {
+        this.x = x; this.y = y; this.z = z;
+        this.color = color;
+        this.life = 0.3;
+        this.maxLife = 0.3;
+        this.maxRadius = maxRadius;
+    }
+    update(dt) {
+        this.life -= dt;
+        return this.life <= 0;
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let s = getScale(this.z);
+        let progress = 1 - (this.life / this.maxLife);
+        ctx.strokeStyle = this.color;
+        ctx.globalAlpha = 1 - progress;
+        ctx.lineWidth = 3 * s * (this.life / this.maxLife);
+        ctx.beginPath(); ctx.arc(p.x, p.y, progress * this.maxRadius * s, 0, Math.PI*2); ctx.stroke();
         ctx.globalAlpha = 1.0;
     }
 }
@@ -1318,8 +1487,9 @@ function renderStats() {
         // Use double quotes for style attributes inside the tooltip
         let tooltip = `<b>${name}</b><br><span style="color:#ccc; font-size:12px;">${desc}</span><br><br>Total: <span style="color:var(--accent)">${formatFn(val)}</span><br>Base: ${formatFn(bd.base)}<br>`;
         for(let i of bd.items) {
-            let displayVal = typeof i.val === 'string' ? i.val : formatFn(i.val);
-            tooltip += `<span style="color:#0f0">+${displayVal} from ${i.name}</span><br>`;
+            let displayVal = typeof i.val === 'object' ? i.val : (typeof i.val === 'string' ? i.val : formatFn(i.val));
+            let cleanDisplayVal = typeof displayVal === 'object' ? `${displayVal.min}-${displayVal.max}` : displayVal;
+            tooltip += `<span style="color:#0f0">+${cleanDisplayVal} from ${i.name}</span><br>`;
         }
         // Properly escape double quotes for HTML attribute, and single quotes for JS evaluation
         tooltip = tooltip.replace(/'/g, "\\'").replace(/"/g, "&quot;");
@@ -1329,10 +1499,13 @@ function renderStats() {
     }
 
     container.innerHTML = `
-        ${getStatHtml('damage', 'Damage', 'Base damage for your weapons and abilities.')}
+        ${getStatHtml('damage', 'Damage', 'Base damage for your weapons and abilities.', v => v.min + '-' + v.max)}
         ${getStatHtml('fireRate', 'Fire Rate', 'Increases the attack speed of your Primary Weapon.', v => Math.round(v) + '%')}
         ${getStatHtml('maxHp', 'Max HP', 'Maximum Hull Integrity. If it reaches 0, you explode.')}
-        ${getStatHtml('armor', 'Armor', 'Reduces incoming hull damage by a flat amount.')}
+        ${getStatHtml('armorRating', 'Armor Rating', 'Increases Damage Reduction against incoming attacks.')}
+        <div class="stat-row" onmouseover="showTooltip('Damage Reduction', 'Percentage of incoming hull damage mitigated.', '', event)" onmouseout="hideTooltip()">
+            <span>Damage Reduction</span><span class="stat-val">${(player.stats.damageReduction * 100).toFixed(1)}%</span>
+        </div>
         ${getStatHtml('maxShields', 'Shields', 'Energy barrier that absorbs damage before Hull.')}
         ${getStatHtml('shieldRegen', 'Shield Regen', 'Amount of Shield recovered per second.', v => v + '/s')}
         ${getStatHtml('maxEnergy', 'Energy', 'Maximum Reactor Energy for using skills.')}
@@ -1434,7 +1607,7 @@ function showTooltip(title, desc, statsHtml, e) {
 function showItemTooltip(item, e) {
     document.getElementById('tt-title').innerText = item.name;
     document.getElementById('tt-title').className = `tt-title tier-${item.tier}`;
-    document.getElementById('tt-type').innerText = item.type;
+    document.getElementById('tt-type').innerText = `iLvl ${item.itemLevel || 1} • ${item.type}`;
     document.getElementById('tt-desc').innerHTML = item.desc;
     
     let eqItem = SLOT_TYPES.includes(item.type) ? equipment[item.type] : null;
@@ -1442,15 +1615,41 @@ function showItemTooltip(item, e) {
     if (item.stats) {
         for (let stat in item.stats) {
             let val = item.stats[stat];
-            let delta = eqItem && eqItem.stats && eqItem.stats[stat] ? val - eqItem.stats[stat] : val;
-            let str = item.statLines.find(l => l.includes(val) && !l.startsWith('[PERK]'));
-            if (!str) str = `+${val} ${stat}`;
+            let isObj = typeof val === 'object';
             
-            if (delta > 0) str += ` <span style="color:#0f0">(+${delta})</span>`;
-            else if (delta < 0) str += ` <span style="color:#f00">(${delta})</span>`;
+            let deltaStr = '';
+            if (isObj) {
+                let deltaMin = eqItem && eqItem.stats && eqItem.stats[stat] ? val.min - eqItem.stats[stat].min : val.min;
+                let deltaMax = eqItem && eqItem.stats && eqItem.stats[stat] ? val.max - eqItem.stats[stat].max : val.max;
+                if (deltaMin > 0 || deltaMax > 0) deltaStr = ` <span style="color:#0f0">(+${deltaMin > 0 ? deltaMin : 0}-${deltaMax > 0 ? deltaMax : 0})</span>`;
+                else if (deltaMin < 0 || deltaMax < 0) deltaStr = ` <span style="color:#f00">(${deltaMin}-${deltaMax})</span>`;
+            } else {
+                let delta = eqItem && eqItem.stats && eqItem.stats[stat] ? val - eqItem.stats[stat] : val;
+                if (delta > 0) deltaStr = ` <span style="color:#0f0">(+${delta})</span>`;
+                else if (delta < 0) deltaStr = ` <span style="color:#f00">(${delta})</span>`;
+            }
+
+            let str = item.statLines.find(l => l.includes(isObj ? `${val.min}-${val.max}` : val) && !l.startsWith('[PERK]'));
+            if (!str) str = isObj ? `+${val.min}-${val.max} ${stat}` : `+${val} ${stat}`;
+            str += deltaStr;
             statsHtml.push(str);
         }
     }
+
+    if (eqItem && eqItem.stats) {
+        for (let stat in eqItem.stats) {
+            if (!item.stats || item.stats[stat] === undefined) {
+                let eqVal = eqItem.stats[stat];
+                let isObj = typeof eqVal === 'object';
+                let eqStr = eqItem.statLines?.find(l => l.includes(isObj ? `${eqVal.min}-${eqVal.max}` : eqVal) && !l.startsWith('[PERK]'));
+                if (!eqStr) eqStr = isObj ? `+${eqVal.min}-${eqVal.max} ${stat}` : `+${eqVal} ${stat}`;
+                
+                let lostStr = eqStr.replace(/^\+/, '-');
+                statsHtml.push(`<span style="color:rgba(255, 0, 0, 0.5); font-style:italic;">${lostStr}</span>`);
+            }
+        }
+    }
+
     if (item.perk) {
         let perkLine = item.statLines.find(l => l.startsWith('[PERK]'));
         if(perkLine) statsHtml.push(`<span style="color:#f82">${perkLine}</span>`);
@@ -1463,7 +1662,7 @@ function showItemTooltip(item, e) {
         ttEq.style.display = 'block';
         document.getElementById('tt-eq-title').innerText = eqItem.name + ' (EQUIPPED)';
         document.getElementById('tt-eq-title').className = `tt-title tier-${eqItem.tier}`;
-        document.getElementById('tt-eq-type').innerText = eqItem.type;
+        document.getElementById('tt-eq-type').innerText = `iLvl ${eqItem.itemLevel || 1} • ${eqItem.type}`;
         document.getElementById('tt-eq-desc').innerHTML = eqItem.desc;
         let eqStatsHtml = eqItem.statLines ? [...eqItem.statLines] : [];
         if(eqItem.perk) {
@@ -1483,13 +1682,17 @@ function showEquipTooltip(slot, e) {
 }
 function showSkillTooltip(id, e) {
     let skill = player.skills[id-1];
+    let dmgStr = `${player.stats.damage.min}-${player.stats.damage.max}`;
+    let dmg2Str = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
+    let dmg20Str = `${player.stats.damage.min * 20}-${player.stats.damage.max * 20}`;
+
     let descs = [
-        `Fires a projectile dealing <span style="color:#0f0">${player.stats.damage}</span> damage.`,
-        `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${player.stats.damage * 2}</span> damage and stunning nearby enemies.`,
-        `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${player.stats.damage}</span> damage.`,
-        `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${player.stats.damage * 20}</span> damage.`
+        `Fires a projectile dealing <span style="color:#0f0">${dmgStr}</span> damage.`,
+        `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmg2Str}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
+        `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgStr}</span> damage per second.<br>Width: 170 units`,
+        `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmg20Str}</span> damage.`
     ];
-    showTooltip(skill.name, descs[id-1], `Cost: ${skill.cost} Energy<br>Cooldown: ${skill.maxCd.toFixed(2)}s`, e);
+    showTooltip(skill.name, descs[id-1], `Cost: ${skill.cost} ${skill.isFuel ? 'Fuel' : 'Energy'}<br>Cooldown: ${skill.maxCd.toFixed(2)}s`, e);
 }
 function hideTooltip() { ttContainer.style.opacity = 0; }
 function positionTooltip(e) {
@@ -1533,6 +1736,7 @@ function useSkill(index) {
     }
 
     if(skill.cd > 0) return;
+    if (index === 3 && player.activeSingularity) return; // safety against double cast logic mismatch
     
     if(skill.isFuel) {
         if(player.stats.fuel < skill.cost) return;
@@ -1549,19 +1753,20 @@ function useSkill(index) {
     if(index === 0) { // Pulse Blaster
         let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
         if (hasTriple) {
-            projectiles.push(new Projectile(player.x, player.y, angle, 600, player.stats.damage, true, varColor('--accent'), player));
-            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, player.stats.damage, true, varColor('--accent'), player));
-            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, player.stats.damage, true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
-            projectiles.push(new Projectile(player.x, player.y, angle, 600, player.stats.damage, true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
     else if(index === 1) { // EMP
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
+        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
             // Reduced 40% (450 -> 270)
-            if(e instanceof Enemy && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
-                e.takeDamage(player.stats.damage * 2);
+            if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
+                e.takeDamage(getDamage(player) * 2, player, varColor('--shield'));
                 e.stunTimer = 3.0;
             }
         }
@@ -1573,16 +1778,7 @@ function useSkill(index) {
         player.x += Math.cos(angle) * dist;
         player.y += Math.sin(angle) * dist;
         
-        // Trail
-        let steps = 15;
-        for(let i=0; i<steps; i++) {
-            let px = MathUtils.lerp(oldX, player.x, i/steps);
-            let py = MathUtils.lerp(oldY, player.y, i/steps);
-            createParticles(px, py, 0, 5, varColor('--energy'));
-            // Damage along path
-            projectiles.push(new Projectile(px, py, 0, 0, player.stats.damage, true, varColor('--energy'), player)); 
-            // hacky way to do stationary aoe damage
-        }
+        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, getDamage(player), varColor('--energy')));
     }
     else if(index === 3) { // Singularity
         player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
@@ -1694,7 +1890,11 @@ function update(dt) {
 
     // --- Entity Updates ---
     for(let i=entities.length-1; i>=0; i--) {
-        if(entities[i].update(dt)) entities.splice(i, 1);
+        if(entities[i].dead) {
+            entities.splice(i, 1);
+        } else if(entities[i].update(dt)) {
+            entities.splice(i, 1);
+        }
     }
     for(let i=projectiles.length-1; i>=0; i--) {
         if(projectiles[i].update(dt)) projectiles.splice(i, 1);
@@ -1707,6 +1907,12 @@ function update(dt) {
     }
     for(let i=particles.length-1; i>=0; i--) {
         if(particles[i].update(dt)) particles.splice(i, 1);
+    }
+    for(let i=shockwaves.length-1; i>=0; i--) {
+        if(shockwaves[i].update(dt)) shockwaves.splice(i, 1);
+    }
+    for(let i=warpTrails.length-1; i>=0; i--) {
+        if(warpTrails[i].update(dt)) warpTrails.splice(i, 1);
     }
     for(let i=floatingTexts.length-1; i>=0; i--) {
         floatingTexts[i].update(dt);
@@ -1762,7 +1968,7 @@ function draw() {
 
     // Draw order: Z-sorting
     let allRenderables = [
-        ...entities, ...drops, ...xpOrbs, ...particles, ...projectiles,
+        ...entities, ...drops, ...xpOrbs, ...particles, ...projectiles, ...shockwaves, ...warpTrails,
         { isPlayer: true, x: player.x, y: player.y, z: 0 }
     ].sort((a, b) => b.z - a.z); // draw deep space first
 
@@ -1955,6 +2161,7 @@ inventory[0] = {
     name: 'Fuel Cell',
     type: 'Fuel',
     tier: 0,
+    itemLevel: 1,
     stackable: true,
     count: 3,
     desc: 'Restores 12 Fuel on use.'
