@@ -534,24 +534,18 @@ class Enemy {
         this.attackTimer = 0;
         this.stunTimer = 0;
         this.type = Math.random() < 0.7 ? 'chaser' : 'shooter';
-        if (this.speed *= 0.8;
-            this.type === 'chaser') {
+        if (this.type === 'chaser') {
             this.speed *= 0.8;
             this.attackCombo = 0;
             this.chaserKnockbackTimer = 0;
-            this.chaserSlowT = 0;
-        } else {
-            this.orbitDir = Math.random() < 0.5 ? 1 : -1;
-            this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
-            this.rapidShotsToFire = 0;
-  i         this.rapidShotInterval mer = 0;
-            this.knockbackVx = 0;
-            this.knockbackVy = 0;
+            this.chaserSlowTimer = 0;
         } else {
             this.orbitDir = Math.random() < 0.5 ? 1 : -1;
             this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
             this.rapidShotsToFire = 0;
             this.rapidShotInterval = 0;
+            this.knockbackVx = 0;
+            this.knockbackVy = 0;
         }
         this.color = this.type === 'chaser' ? '#ff0055' : '#00ffcc';
     }
@@ -567,18 +561,13 @@ class Enemy {
             this.stunTimer -= dt;
             return;
         }
-le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
-                let spiralAngle = progress * Math.PI * 6;
-                let wobble = Math.sin(spiralAngle) * 800;
-                this. + (-this.knockbackVy / 500) * wobble
-        let dist = MathUtils.distance(this + (this.knockbackVx / 500) * wobble.x, this.y, player.x, player.y);
+
+        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
         let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
         
         if (this.type === 'chaser') {
             if (this.chaserKnockbackTimer > 0) {
                 this.chaserKnockbackTimer -= dt;
-                this.vx = this.knockbackVx;
-                this.vy = this.knockbackVy;
                 let progress = 1.0 - (this.chaserKnockbackTimer / 0.2);
                 let spiralAngle = progress * Math.PI * 6;
                 let wobble = Math.sin(spiralAngle) * 800;
@@ -589,8 +578,8 @@ le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
                 if (this.chaserSlowTimer > 0) {
                     this.chaserSlowTimer -= dt;
                     speedMult = 0.05 + 0.95 * (1.0 - (this.chaserSlowTimer / 1.2));
-                }00
-                this.vx = Math.cos(angle) * this.speed * s00
+                }
+                this.vx = Math.cos(angle) * this.speed * speedMult;
                 this.vy = Math.sin(angle) * this.speed * speedMult;
             }
             
@@ -601,8 +590,6 @@ le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
                     this.attackTimer = 1.0;
                     this.chaserKnockbackTimer = 0.2;
                     this.chaserSlowTimer = 1.2;
-                    this.knockbackVx = -Math.cos(angle) * this.speed * 15;
-                    this.knockbackVy = -Math.sin(angle) * this.speed * 15;
                     this.knockbackVx = -Math.cos(angle) * 500;
                     this.knockbackVy = -Math.sin(angle) * 500;
                     this.vx = this.knockbackVx;
@@ -624,27 +611,9 @@ le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
                         return true; // Despawn without dropping loot/xp
                     } else {
                         player.takeDamage(getDamage(this), this);
-                    } = Math.cos(angle + Math.PI / 2 * this.orbitDir) * this.speed * 0.5;
-                this.vy Math.sin(angle + Math.PI / 2 * this.orbitDir) * this.speed *.5
-            }
-            
-           if (rapidShotsToFire > 0) {
-                if (this.rapidShotInteral <= 0) {
-                    projectiles.push(new Projectile(this.x, this., angle, 300, getDamage(this), false, this.color, this));
-                    this.rapidShotsToFire--;
-                   this.rapidShotInterval .2 // 0.2s between rapid shots
-                  else {       this.attackTimer = 1.0 / 1.5;
-                    this.rapidShotInterval -= dt;    }
+                    }
                 }
-            } else }rpidShoTimer <= 0) {
-                his.rpidShotsToFire = 3;
-                this.rapidShotInterval = 0;
-                this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
-            } else {
-                this.rapidShotTimer -= dt;
             }
-            
-            if (this.atta0 && this.rapidShotsToFire === 
         } else {
         
             // Shooter keeps distance
@@ -655,32 +624,32 @@ le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
                 this.vx = -Math.cos(angle) * this.speed;
                 this.vy = -Math.sin(angle) * this.speed;
             } else {
-                this.vx = 0; this.vy = 0;
                 this.vx = Math.cos(angle + Math.PI / 2 * this.orbitDir) * this.speed * 0.5;
                 this.vy = Math.sin(angle + Math.PI / 2 * this.orbitDir) * this.speed * 0.5;
             }
             
             if (this.attackTimer <= 0 && dist < 400) {
-            if (this.rapidShotsToFire > 0) {
-                if (this.rapidShotInterval <= 0) {
-                    projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
-                    this.rapidShotsToFire--;
-                    this.rapidShotInterval = 0.2; // 0.2s between rapid shots
+                if (this.rapidShotsToFire > 0) {
+                    if (this.rapidShotInterval <= 0) {
+                        projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
+                        this.rapidShotsToFire--;
+                        this.rapidShotInterval = 0.2; // 0.2s between rapid shots
+                    } else {
+                        this.rapidShotInterval -= dt;
+                    }
+                } else if (this.rapidShotTimer <= 0) {
+                    this.rapidShotsToFire = 3;
+                    this.rapidShotInterval = 0;
+                    this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
                 } else {
-                    this.rapidShotInterval -= dt;
+                    this.rapidShotTimer -= dt;
                 }
-            } else if (this.rapidShotTimer <= 0) {
-                this.rapidShotsToFire = 3;
-                this.rapidShotInterval = 0;
-                this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
-            } else {
-                this.rapidShotTimer -= dt;
-            }
-            
-            if (this.attackTimer <= 0 && dist < 400 && this.rapidShotsToFire === 0) {
-                // Shoot player
-                projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
-                this.attackTimer = 2.0;
+                
+                if (this.rapidShotsToFire === 0) {
+                    // Shoot player
+                    projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
+                    this.attackTimer = 2.0;
+                }
             }
         }
         
@@ -711,7 +680,7 @@ le progress = 1.0 - (tchaserKnockbackTimer / 0.2);
         ctx.lineWidth = 2;
 
         if (this.type === 'chaser' && this.attackCombo > 0) {
-            let comboColor = 'transparent'; * 0.5
+            let comboColor = 'transparent';
             if (this.attackCombo === 1) comboColor = 'rgba(255,0,0,0.5)';
             else if (this.attackCombo === 2) comboColor = 'rgba(255,128,0,0.5)';
             else if (this.attackCombo === 3) {
