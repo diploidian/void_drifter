@@ -372,7 +372,7 @@ const player = {
             
             // Low HP sound trigger (triggers upon dropping to 25% or less)
             if (this.stats.hp > 0 && this.stats.hp <= this.stats.maxHp * 0.25 && oldHp > this.stats.maxHp * 0.25) {
-                playSound('sounds/spaceEngine_000.ogg');
+                playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/spaceEngine_000.ogg');
             }
 
             // Screen Glow intensity increase
@@ -1589,7 +1589,7 @@ function useItem(index) {
     if(!item) return;
 
     if (item.type === 'Fuel') {
-        playSound('sounds/impactMetal_004.ogg');
+        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + 5);
         item.count--;
         if(item.count <= 0) inventory[index] = null;
@@ -1763,7 +1763,7 @@ function toggleInventory() {
 }
 
 function die() {
-    playSound('sounds/explosionCrunch_003.ogg');
+    playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/explosionCrunch_003.ogg');
     GAME.state = 'DEAD';
     document.getElementById('game-over').style.display = 'flex';
 }
@@ -1800,7 +1800,7 @@ function useSkill(index) {
     if(index === 0) { // Pulse Blaster
         let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
         if (hasTriple) {
-            playSound('sounds/laserLarge_001.ogg');
+            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserLarge_001.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
@@ -1810,7 +1810,7 @@ function useSkill(index) {
         }
     } 
     else if(index === 1) { // EMP05
-        playSound('sounds/spaceEngine_002.ogg');
+        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/spaceEngine_002.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
@@ -1822,7 +1822,7 @@ function useSkill(index) {
         }
     }
     else if(index === 2) { // Warp Dash
-        playSound('sounds/doorOpen_002.ogg');
+        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/doorOpen_002.ogg');
         // Reduced 40% (500 -> 300)
         let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
         let oldX = player.x, oldY = player.y;
@@ -1832,7 +1832,7 @@ function useSkill(index) {
         warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, getDamage(player), varColor('--energy')));
     }
     else if(index === 3) { // Singularity
-        playSound('sounds/engineCircular_000.ogg');
+        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/engineCircular_000.ogg');
         player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
         entities.push(player.activeSingularity);
     }
@@ -1936,7 +1936,7 @@ function update(dt) {
     } else {
         player.timers.shieldRegen -= dt;
         if(player.timers.shieldRegen <= 0 && player.stats.shields < player.stats.maxShields) {
-            playSound('sounds/forceField_002.ogg');
+            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/forceField_002.ogg');
         }
     }
 
@@ -2200,7 +2200,7 @@ window.addEventListener('wheel', e => {
 function useFuelCell() {
     let idx = inventory.findIndex(i => i && i.type === 'Fuel');
     if (idx !== -1) {
-        playSound('sounds/impactMetal_004.ogg');
+        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
         let item = inventory[idx];
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + 12);
         item.count--;
