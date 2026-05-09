@@ -757,8 +757,8 @@ class Boss extends Enemy {
         } else if (charge.cd <= 0 && dist > 200 && dist < 800) {
             charge.active = true;
             charge.duration = 1.5;
-            this.vx = Math.cos(angle) * 800;
-            this.vy = Math.sin(angle) * 800;
+            this.vx = Math.cos(angle) * 300;
+            this.vy = Math.sin(angle) * 300;
             charge.cd = charge.maxCd;
         }
 
