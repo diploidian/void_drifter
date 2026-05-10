@@ -541,7 +541,7 @@ class Enemy {
             this.chaserSlowTimer = 0;
         } else {
             this.orbitDir = Math.random() < 0.5 ? 1 : -1;
-            this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
+            this.rapidShotTimer = 10.0;
             this.rapidShotsToFire = 0;
             this.rapidShotInterval = 0;
             this.knockbackVx = 0;
@@ -635,9 +635,9 @@ class Enemy {
             if (this.attackTimer <= 0 && dist < 400) {
                 // 2. Check if it is time for a Rapid Fire sequence
                 if (this.rapidShotTimer <= 0 && this.rapidShotsToFire === 0) {
-                    this.rapidShotsToFire = 3;
+                    this.rapidShotsToFire = 2;
                     this.rapidShotInterval = 0;
-                    this.rapidShotTimer = 5.0 + MathUtils.rand(0, 2.5);
+                    this.rapidShotTimer = 10.0;
                 }
 
                 // 3. Handle the Rapid Fire sequence
@@ -809,6 +809,172 @@ class Projectile {
     }
 }
 
+class SpecialFuelDrop {
+    constructor(x, y, fuelAmount) {
+        this.x = x; this.y = y; this.z = 0;
+        this.fuelAmount = fuelAmount;
+        this.radius = 10;
+        this.life = 10.0;
+        this.dead = false;
+        
+        let ang = MathUtils.rand(0, Math.PI * 2);
+        let spd = MathUtils.rand(20, 50);
+        this.vx = Math.cos(ang) * spd;
+        this.vy = Math.sin(ang) * spd;
+    }
+    update(dt) {
+        this.life -= dt;
+        if (this.life <= 0) return true;
+        
+        this.vx *= 0.95;
+        this.vy *= 0.95;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        let distToPlayer = MathUtils.distance(this.x, this.y, player.x, player.y);
+        if (distToPlayer < player.radius + this.radius + 30) {
+            let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
+            this.vx += Math.cos(angle) * 500 * dt;
+            this.vy += Math.sin(angle) * 500 * dt;
+        }
+        if (distToPlayer < player.radius + this.radius) {
+            player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + this.fuelAmount);
+            createFloatingText(`+${Math.floor(this.fuelAmount)} Fuel`, this.x, this.y, '#ffff00', 1.5, true);
+            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
+            updateUI();
+            return true;
+        }
+        return false;
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let s = getScale(this.z);
+        
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#ffff00';
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, this.radius * s, 0, Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        ctx.fillStyle = '#000';
+        ctx.fillRect(p.x - 2*s, p.y - 4*s, 4*s, 8*s);
+    }
+}
+
+class HomingMissile {
+    constructor(x, y, angle, hp, source) {
+        this.x = x; this.y = y; this.z = 0;
+        this.angle = angle;
+        this.speed = player.stats.maxSpeed * 1.10;
+        this.fuel = 100;
+        this.maxHp = hp;
+        this.hp = hp;
+        this.dead = false;
+        this.radius = 15;
+        this.source = source;
+        this.color = '#ffaa00';
+    }
+    update(dt) {
+        if (this.dead) return true;
+        
+        let targetAngle = MathUtils.angle(this.x, this.y, player.x, player.y);
+        let diff = targetAngle - this.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        
+        let turnRate = 1.0; 
+        this.angle += Math.sign(diff) * Math.min(Math.abs(diff), turnRate * dt);
+        
+        this.vx = Math.cos(this.angle) * this.speed;
+        this.vy = Math.sin(this.angle) * this.speed;
+        
+        let distTraveled = this.speed * dt;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        this.fuel -= distTraveled / 20;
+        
+        let distToPlayer = MathUtils.distance(this.x, this.y, player.x, player.y);
+        
+        if (this.fuel <= 0 || distToPlayer < this.radius + player.radius) {
+            this.detonate();
+            return true;
+        }
+        
+        return false;
+    }
+    detonate() {
+        this.dead = true;
+        createParticles(this.x, this.y, 0, 50, '#ff4400');
+        shockwaves.push(new Shockwave(this.x, this.y, 0, '#ff4400', 75));
+        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
+        if (dist <= 75) {
+            player.takeDamage(player.stats.maxHp * 0.15, this.source);
+        }
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let s = getScale(this.z);
+        
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(s, s);
+        ctx.rotate(this.angle);
+        
+        ctx.fillStyle = '#ffaa00';
+        ctx.beginPath();
+        ctx.moveTo(10, 0); 
+        ctx.lineTo(-10, 7.5);
+        ctx.lineTo(-10, -7.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        if (this.fuel > 0) {
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath();
+            ctx.moveTo(-10, 5);
+            ctx.lineTo(-10 - Math.random() * 15, 0);
+            ctx.lineTo(-10, -5);
+            ctx.fill();
+        }
+        
+        ctx.restore();
+        
+        let barW = 30 * s;
+        let barH = 4 * s;
+        let bY = p.y + 20 * s;
+        
+        ctx.fillStyle = 'red';
+        ctx.fillRect(p.x - barW/2, bY, barW, barH);
+        ctx.fillStyle = 'green';
+        ctx.fillRect(p.x - barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        
+        ctx.fillStyle = '#333';
+        ctx.fillRect(p.x - barW/2, bY + barH + 2, barW, barH);
+        ctx.fillStyle = '#ffff00';
+        ctx.fillRect(p.x - barW/2, bY + barH + 2, barW * Math.max(0, this.fuel / 100), barH);
+    }
+    takeDamage(amount, source, color = '#fff') {
+        if (this.dead) return false;
+        this.hp -= amount;
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
+        if(this.hp <= 0) {
+            this.dead = true;
+            createParticles(this.x, this.y, 0, 30, '#888');
+            entities.push(new SpecialFuelDrop(this.x, this.y, this.fuel));
+            return true;
+        }
+        return false;
+    }
+}
+
 class Boss extends Enemy {
     constructor(x, y) {
         super(x, y);
@@ -823,7 +989,7 @@ class Boss extends Enemy {
         this.abilities = [
             { name: 'charge', cd: 0, maxCd: 8.0, active: false, duration: 0 },
             { name: 'barrage', cd: 3, maxCd: 10.0 },
-            { name: 'pull', cd: 6, maxCd: 15.0, active: false, duration: 0 }
+            { name: 'missile', cd: 6, maxCd: 15.0 }
         ];
     }
 
@@ -866,17 +1032,10 @@ class Boss extends Enemy {
             barrage.cd = barrage.maxCd;
         }
 
-        let pull = this.abilities[2];
-        if (pull.active) {
-            pull.duration -= dt;
-            if (pull.duration <= 0) pull.active = false;
-            let pullAngle = MathUtils.angle(player.x, player.y, this.x, this.y);
-            player.vx += Math.cos(pullAngle) * 400 * dt;
-            player.vy += Math.sin(pullAngle) * 400 * dt;
-        } else if (pull.cd <= 0 && dist < 600) {
-            pull.active = true;
-            pull.duration = 3.0;
-            pull.cd = pull.maxCd;
+        let missile = this.abilities[2];
+        if (missile.cd <= 0) {
+            entities.push(new HomingMissile(this.x, this.y, angle, 300 * (1 + (this.level-1)*0.2), this));
+            missile.cd = missile.maxCd;
         }
 
         if (!charge.active) {
@@ -892,11 +1051,23 @@ class Boss extends Enemy {
         super.draw(ctx); // basic shape
         let p = project(this.x, this.y, this.z);
         if(!p) return;
-        if (this.abilities[2].active) { // pull
-            ctx.strokeStyle = 'rgba(255,0,0,0.5)';
-            ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(p.x, p.y, 600 * getScale(this.z), 0, Math.PI*2); ctx.stroke();
-        }
+        
+        let barW = 80 * getScale(this.z);
+        let barH = 6 * getScale(this.z);
+        let bY = p.y - 50 * getScale(this.z);
+        
+        ctx.fillStyle = '#000';
+        ctx.fillRect(p.x - barW/2, bY, barW, barH);
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(p.x - barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(p.x - barW/2, bY, barW, barH);
+        
+        ctx.fillStyle = '#fff';
+        ctx.font = `${10 * getScale(this.z)}px Orbitron`;
+        ctx.textAlign = 'center';
+        ctx.fillText("VOID BOSS", p.x, bY - 4 * getScale(this.z));
     }
 
     takeDamage(amount, source, color = '#fff') {
@@ -910,7 +1081,7 @@ class Boss extends Enemy {
             for(let i=0; i<10; i++) spawnDrop(this.x, this.y, true);
 
             let slots = [...SLOT_TYPES];
-            for(let i=0; i<3; i++) {
+            for(let i=0; i<1; i++) {
                 let slotType = slots.splice(MathUtils.randInt(0, slots.length-1), 1)[0];
                 spawnDrop(this.x, this.y, false, generateLoot(slotType, 5));
             }
@@ -1732,8 +1903,13 @@ function showSkillTooltip(id, e) {
     let dmg2Str = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
     let dmg20Str = `${player.stats.damage.min * 20}-${player.stats.damage.max * 20}`;
 
+    let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
+    let projCount = hasTriple ? 3 : 1;
+    let pbDesc = `Fires ${projCount} projectile${projCount > 1 ? 's' : ''} dealing <span style="color:#0f0">${dmgStr}</span> damage.<br>Range: 1200 units`;
+    if (hasTriple) pbDesc += `<br><span style="color:#f82">[PERK] Triple Shot Active</span>`;
+
     let descs = [
-        `Fires a projectile dealing <span style="color:#0f0">${dmgStr}</span> damage.`,
+        pbDesc,
         `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmg2Str}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
         `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgStr}</span> damage per second.<br>Width: 170 units`,
         `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmg20Str}</span> damage.`
@@ -1805,7 +1981,7 @@ function useSkill(index) {
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
-            playSound('laserSmall_004.ogg');
+            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserSmall_004.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
