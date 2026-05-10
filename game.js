@@ -133,6 +133,10 @@ function getArmorReduction(rating, level) {
     return Math.max(0, rating / (rating + 250 + level * 50));
 }
 
+function getCritBonus(rating, level) {
+    return Math.max(0, rating / (rating + 200 + level * 30)) * 100;
+}
+
 function generateLoot(type = null, tierLevel = -1) {
     // 20% chance for junk/resources
     if (Math.random() < 0.25 && type === null) {
@@ -171,7 +175,7 @@ function generateLoot(type = null, tierLevel = -1) {
     let lvlMult = 1 + (player.level - 1) * 0.15; // +15% item value per level
     
     let availableStats = [...template.stats, 'fireRateRating'];
-    if (type === 'Primary Weapon' || type === 'Secondary Weapon') availableStats.push('damage', 'critChance');
+    if (type === 'Primary Weapon' || type === 'Secondary Weapon') availableStats.push('damage', 'critRating');
     else if (type === 'Hull') availableStats.push('maxHp', 'armorRating');
     else if (type === 'Shields') availableStats.push('maxShields', 'shieldRegen');
     else if (type === 'Engine') availableStats.push('maxSpeed', 'acceleration');
@@ -196,7 +200,7 @@ function generateLoot(type = null, tierLevel = -1) {
             let max = Math.floor(avgDmg + spread/2);
             val = { min, max }; str = `+${min}-${max} Damage`; isObj = true;
         }
-        else if (stat === 'critChance') { val = Math.floor(MathUtils.rand(2, 5) * tier.mult); str = `+${val}% Crit Chance`; }
+        else if (stat === 'critRating') { val = Math.floor(MathUtils.rand(10, 25) * tier.mult * lvlMult); str = `+${val} Crit Rating`; }
         else if (stat === 'maxHp') { val = Math.floor(MathUtils.rand(20, 50) * tier.mult * lvlMult); str = `+${val} Max HP`; }
         else if (stat === 'armorRating') { val = Math.floor(MathUtils.rand(20, 30) * Math.pow(tier.mult, 2) * lvlMult); str = `+${val} Armor Rating`; }
         else if (stat === 'maxShields') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult); str = `+${val} Max Shields`; }
@@ -255,7 +259,7 @@ const BASE_STATS = {
     maxEnergy: 100, energy: 100, energyRegen: 10,
     maxFuel: 100, fuel: 100,
     maxSpeed: 300, acceleration: 400, friction: 0.95,
-    damage: { min: 9, max: 13 }, fireRate: 100, critChance: 5
+    damage: { min: 9, max: 13 }, fireRate: 100, critChance: 5, critRating: 0
 };
 
 const player = {
@@ -319,6 +323,7 @@ const player = {
         }
         
         let totalFireRateRating = 0;
+        let totalCritRating = 0;
 
         // Add equip modifiers
         for (let key in equipment) {
@@ -328,6 +333,9 @@ const player = {
                     if (stat === 'fireRateRating') {
                         totalFireRateRating += item.stats[stat];
                         this.statBreakdown['fireRate'].items.push({ name: item.name, val: item.stats[stat] + ' Rating' });
+                    } else if (stat === 'critRating') {
+                        totalCritRating += item.stats[stat];
+                        this.statBreakdown['critChance'].items.push({ name: item.name, val: item.stats[stat] + ' Rating' });
                     } else if (stat === 'damage') {
                         this.stats.damage.min += item.stats[stat].min;
                         this.stats.damage.max += item.stats[stat].max;
@@ -342,6 +350,9 @@ const player = {
         
         let fireRateBonus = totalFireRateRating > 0 ? getFireRateBonus(totalFireRateRating, this.level) : 0;
         this.stats.fireRate = BASE_STATS.fireRate * (1 + fireRateBonus);
+
+        let critBonus = totalCritRating > 0 ? getCritBonus(totalCritRating, this.level) : 0;
+        this.stats.critChance = BASE_STATS.critChance + critBonus;
 
         this.stats.damageReduction = this.stats.armorRating > 0 ? getArmorReduction(this.stats.armorRating, this.level) : 0;
 
@@ -1260,7 +1271,6 @@ class Singularity {
                 this.tickTimer = 0.25;
                 for(let e of entities) {
                     if (e instanceof Enemy && !e.dead && e.z <= 0 && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        e.takeDamage(getDamage(player) * 0.25, player, '#9933ff');
                         e.takeDamage(getDamage(player) * 0.35, player, '#9933ff');
                     }
                 }
@@ -1283,7 +1293,6 @@ class Singularity {
                 createParticles(this.x, this.y, 0, 100, '#9933ff');
                 for(let e of entities) {
                     if (!e.dead && (e instanceof Enemy || e instanceof Asteroid) && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        e.takeDamage(getDamage(player) * 20, player, '#9933ff');
                         e.takeDamage(getDamage(player) * 2, player, '#9933ff');
                     }
                 }
@@ -1318,11 +1327,10 @@ class Singularity {
 }
 
 class WarpTrail {
-        constructor(x1, y1, x2, y2, width, mult, color) {
+    constructor(x1, y1, x2, y2, width, mult, color) {
         this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
         this.z = 0;
         this.width = width;
-        this.dps = dps;
         this.mult = mult;
         this.color = color;
         this.life = 1.5;
@@ -1362,7 +1370,6 @@ class WarpTrail {
                     let projY = this.y1 + t * this.dy;
                     let dist = MathUtils.distance(e.x, e.y, projX, projY);
                     if (dist < (this.width / 2) + e.radius) {
-                        e.takeDamage(this.dps * 0.25, player, this.color);
                         e.takeDamage(getDamage(player) * this.mult * 0.25, player, this.color);
                     }
                 }
@@ -1761,24 +1768,9 @@ function drawGrid(ctx) {
 /** ==========================================
  * UI & INVENTORY LOGIC
  * ========================================== */
-function updateUI() {
-    document.getElementById('xp-fill').style.width = `${(player.xp / player.xpNext)*100}%`;
-    document.getElementById('lvl-text').innerText = `LEVEL ${player.level}`;
-
-    document.getElementById('hp-fill').style.width = `${(player.stats.hp / player.stats.maxHp)*100}%`;
-    document.getElementById('hp-text').innerText = `HP: ${Math.floor(player.stats.hp)}/${player.stats.maxHp}`;
-    
-    let sMax = player.stats.maxShields || 1;
-    document.getElementById('shield-fill').style.width = `${(player.stats.shields / sMax)*100}%`;
-    document.getElementById('shield-text').innerText = `SH: ${Math.floor(player.stats.shields)}/${player.stats.maxShields}`;
-    
-    document.getElementById('energy-fill').style.width = `${(player.stats.energy / player.stats.maxEnergy)*100}%`;
-    document.getElementById('energy-text').innerText = `EN: ${Math.floor(player.stats.energy)}/${player.stats.maxEnergy}`;
-    
-    document.getElementById('fuel-fill').style.width = `${(player.stats.fuel / player.stats.maxFuel)*100}%`;
-    document.getElementById('fuel-text').innerText = `FUEL: ${Math.floor(player.stats.fuel)}`;
-
 let dragSource = null;
+let pendingUpgrade = null;
+
 function handleDrop(e, targetType, targetId) {
     e.preventDefault();
     if (!dragSource) return;
@@ -1788,23 +1780,47 @@ function handleDrop(e, targetType, targetId) {
 
     if (!srcItem) return;
 
+    // Upgrade Logic
     if (srcItem.type === 'Upgrade Material' && srcItem.count >= 3 && tgtItem && tgtItem.tier === srcItem.tier && !tgtItem.upgraded && tgtItem.type !== 'Upgrade Material' && tgtItem.type !== 'Resource' && tgtItem.type !== 'Fuel') {
         openUpgradeModal(tgtItem, dragSource, targetType, targetId);
         dragSource = null;
         return;
     }
 
+    // Inventory to Inventory
     if (dragSource.type === 'inv' && targetType === 'inv') {
         let temp = inventory[targetId];
         inventory[targetId] = inventory[dragSource.index];
         inventory[dragSource.index] = temp;
+        renderInventory();
         updateUI();
+    } 
+    // Inventory to Equipment
+    else if (dragSource.type === 'inv' && targetType === 'eq') {
+        if (srcItem.type === targetId) {
+            let temp = equipment[targetId];
+            equipment[targetId] = inventory[dragSource.index];
+            inventory[dragSource.index] = temp;
+            renderInventory();
+            renderEquipment();
+            player.updateStats();
+        }
+    } 
+    // Equipment to Inventory
+    else if (dragSource.type === 'eq' && targetType === 'inv') {
+        let temp = inventory[targetId];
+        if (!temp || temp.type === dragSource.slot) {
+            inventory[targetId] = equipment[dragSource.slot];
+            equipment[dragSource.slot] = temp;
+            renderInventory();
+            renderEquipment();
+            player.updateStats();
+        }
     }
 
     dragSource = null;
 }
 
-let pendingUpgrade = null;
 function openUpgradeModal(targetItem, srcInfo, tgtType, tgtId) {
     pendingUpgrade = { item: targetItem, srcInfo, tgtType, tgtId };
     let modal = document.getElementById('upgrade-modal');
@@ -1892,8 +1908,27 @@ function confirmUpgrade(choice) {
 
     player.updateStats();
     closeUpgradeModal();
+    renderInventory();
+    renderEquipment();
     updateUI();
 }
+
+function updateUI() {
+    document.getElementById('xp-fill').style.width = `${(player.xp / player.xpNext)*100}%`;
+    document.getElementById('lvl-text').innerText = `LEVEL ${player.level}`;
+
+    document.getElementById('hp-fill').style.width = `${(player.stats.hp / player.stats.maxHp)*100}%`;
+    document.getElementById('hp-text').innerText = `HP: ${Math.floor(player.stats.hp)}/${player.stats.maxHp}`;
+    
+    let sMax = player.stats.maxShields || 1;
+    document.getElementById('shield-fill').style.width = `${(player.stats.shields / sMax)*100}%`;
+    document.getElementById('shield-text').innerText = `SH: ${Math.floor(player.stats.shields)}/${player.stats.maxShields}`;
+    
+    document.getElementById('energy-fill').style.width = `${(player.stats.energy / player.stats.maxEnergy)*100}%`;
+    document.getElementById('energy-text').innerText = `EN: ${Math.floor(player.stats.energy)}/${player.stats.maxEnergy}`;
+    
+    document.getElementById('fuel-fill').style.width = `${(player.stats.fuel / player.stats.maxFuel)*100}%`;
+    document.getElementById('fuel-text').innerText = `FUEL: ${Math.floor(player.stats.fuel)}`;
 
     // Skills CD & Energy check
     for(let i=0; i<4; i++) {
@@ -1918,8 +1953,6 @@ function confirmUpgrade(choice) {
         if (fuelCountEl) fuelCountEl.innerText = fuelCells.count;
     }
 
-    renderInventory();
-    renderEquipment();
     renderStats();
 }
 
@@ -2012,7 +2045,7 @@ function renderStats() {
     container.innerHTML = `
         ${getStatHtml('damage', 'Damage', 'Base damage for your weapons and abilities.', v => v.min + '-' + v.max)}
         ${getStatHtml('fireRate', 'Fire Rate', 'Increases the attack speed of your Primary Weapon.', v => Math.round(v) + '%')}
-        ${getStatHtml('critChance', 'Crit Chance', 'Chance to deal double damage on hit.', v => v + '%')}
+        ${getStatHtml('critChance', 'Crit Chance', 'Chance to deal double damage on hit.', v => v.toFixed(1) + '%')}
         ${getStatHtml('maxHp', 'Max HP', 'Maximum Hull Integrity. If it reaches 0, you explode.')}
         ${getStatHtml('armorRating', 'Armor Rating', 'Increases Damage Reduction against incoming attacks.')}
         <div class="stat-row" onmouseover="showTooltip('Damage Reduction', 'Percentage of incoming hull damage mitigated.', '', event)" onmouseout="hideTooltip()">
@@ -2031,12 +2064,13 @@ function pickupItem(newItem) {
     // Stackable check
     if (newItem.stackable) {
         let existing = inventory.find(i => i && i.name === newItem.name);
-        if (existing) { existing.count += newItem.count; updateUI(); return true; }
+        if (existing) { existing.count += newItem.count; renderInventory(); updateUI(); return true; }
     }
     
     // Auto-Equip if slot empty
     if (!newItem.stackable && SLOT_TYPES.includes(newItem.type) && !equipment[newItem.type]) {
         equipment[newItem.type] = newItem;
+        renderEquipment();
         player.updateStats();
         return true;
     }
@@ -2045,6 +2079,7 @@ function pickupItem(newItem) {
     let emptyIdx = inventory.findIndex(i => i === null);
     if (emptyIdx !== -1) {
         inventory[emptyIdx] = newItem;
+        renderInventory();
         updateUI();
         return true;
     }
@@ -2061,6 +2096,7 @@ function useItem(index) {
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
         if(item.count <= 0) inventory[index] = null;
+        renderInventory();
         updateUI();
         if(inventory[index] === null) hideTooltip();
         return;
@@ -2071,6 +2107,8 @@ function useItem(index) {
         let currentEq = equipment[item.type];
         equipment[item.type] = item;
         inventory[index] = currentEq; // swap
+        renderInventory();
+        renderEquipment();
         player.updateStats();
         hideTooltip();
     }
@@ -2083,6 +2121,8 @@ function unequipItem(slotType) {
     if (emptyIdx !== -1) {
         inventory[emptyIdx] = item;
         equipment[slotType] = null;
+        renderInventory();
+        renderEquipment();
         player.updateStats();
         hideTooltip();
     }
@@ -2116,6 +2156,7 @@ function dropItem(index) {
             };
         }
         pickupItem(yieldItem);
+        renderInventory();
         updateUI();
         hideTooltip();
     }
@@ -2214,8 +2255,6 @@ function showEquipTooltip(slot, e) {
 function showSkillTooltip(id, e) {
     let skill = player.skills[id-1];
     let dmgStr = `${player.stats.damage.min}-${player.stats.damage.max}`;
-    let dmg2Str = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
-    let dmg20Str = `${player.stats.damage.min * 20}-${player.stats.damage.max * 20}`;
     let dmgEmpStr = `${Math.floor(player.stats.damage.min * 0.75)}-${Math.floor(player.stats.damage.max * 0.75)}`;
     let dmgWarpStr = `${Math.floor(player.stats.damage.min * 0.75)}-${Math.floor(player.stats.damage.max * 0.75)}`;
     let dmgSingExpStr = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
@@ -2227,9 +2266,6 @@ function showSkillTooltip(id, e) {
 
     let descs = [
         pbDesc,
-        `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmg2Str}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
-        `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgStr}</span> damage per second.<br>Width: 170 units`,
-        `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmg20Str}</span> damage.`
         `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmgEmpStr}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
         `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgWarpStr}</span> damage per second.<br>Width: 170 units`,
         `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmgSingExpStr}</span> damage.`
@@ -2310,13 +2346,12 @@ function useSkill(index) {
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
-    else if(index === 1) { // EMP05
+    else if(index === 1) { // EMP
         playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/spaceEngine_002.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
             if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
-                e.takeDamage(getDamage(player) * 2, player, varColor('--shield'));
                 e.takeDamage(getDamage(player) * 0.75, player, varColor('--shield'));
                 e.stunTimer = 3.0;
             }
@@ -2331,7 +2366,6 @@ function useSkill(index) {
         player.y += Math.sin(angle) * dist;
         
         warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, getDamage(player), varColor('--energy')));
-        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, 0.75, varColor('--energy')));
     }
     else if(index === 3) { // Singularity
         playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/engineCircular_000.ogg');
@@ -2720,6 +2754,7 @@ function useFuelCell() {
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
         if (item.count <= 0) inventory[idx] = null;
+        renderInventory();
         updateUI();
     }
 }
@@ -2738,5 +2773,7 @@ inventory[0] = {
     count: 3,
     desc: 'Restores 20 Fuel on use.'
 };
+renderInventory();
+renderEquipment();
 updateUI();
 requestAnimationFrame(t => { GAME.lastTime = t; loop(t); });
