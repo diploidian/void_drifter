@@ -108,6 +108,18 @@
         .tier-4 { color: #aa33ff; border-color: #aa33ff; text-shadow: 0 0 5px rgba(170, 51, 255, 0.5); } /* Epic */
         .tier-5 { color: #f82; border-color: #f82; text-shadow: 0 0 8px rgba(255, 136, 34, 0.7); } /* Legendary */
 
+        /* Upgrades & Holographic Effect */
+        .holographic {
+            background: linear-gradient(45deg, rgba(0,210,255,0.1), rgba(153,51,255,0.1), rgba(0,210,255,0.1));
+            background-size: 200% 200%;
+            animation: holoFlow 2s infinite linear;
+            border-color: var(--accent) !important;
+        }
+        @keyframes holoFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+        
+        .upg-btn { background: rgba(0,0,0,0.5); border: 1px solid var(--border); color: white; padding: 10px; cursor: pointer; text-align: center; transition: 0.2s; font-family: 'Rajdhani'; font-size: 15px; font-weight: bold; border-radius: 4px; }
+        .upg-btn:hover { border-color: var(--accent); background: rgba(0,210,255,0.2); }
+
         /* Game Over */
         #game-over { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 200; pointer-events: auto;}
         #game-over h1 { font-family: 'Orbitron', sans-serif; font-size: 48px; color: var(--hp); margin-bottom: 20px; }

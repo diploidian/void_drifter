@@ -18,6 +18,17 @@ function getDamage(source) {
     return dmg;
 }
 
+function calculateCrit(amount, source) {
+    let isCrit = false;
+    if (source && source.stats && source.stats.critChance) {
+        if (Math.random() * 100 < source.stats.critChance) {
+            isCrit = true;
+            amount *= 2;
+        }
+    }
+    return { amount, isCrit };
+}
+
 /** ==========================================
  * GAME CONSTANTS & GLOBALS
  * ========================================== */
@@ -78,6 +89,7 @@ function getIcon(type, color) {
     else if(type === 'Reactor') path = '<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="3" transform="rotate(45 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="3" transform="rotate(-45 12 12)"/>';
     else if(type === 'Fuel') path = '<rect x="7" y="6" width="10" height="15" rx="2"/><path d="M10 2h4v4h-4z"/><line x1="12" y1="10" x2="12" y2="17"/>';
     else if(type === 'BossSkull') path = '<path d="M12 2C6.477 2 2 6.477 2 12v4c0 2.21 1.79 4 4 4h2v2h8v-2h2c2.21 0 4-1.79 4-4v-4c0-5.523-4.477-10-10-10zM9 12c-.552 0-1 .448-1 1s.448 1 1 1 1-.448 1-1-.448-1-1-1zm6 0c-.552 0-1 .448-1 1s.448 1 1 1 1-.448 1-1-.448-1-1-1z"/>';
+    else if(type === 'Upgrade Material') path = '<polygon points="12 2 22 12 12 22 2 12"/>';
     else path = '<polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>'; // Resource
     
     let rawSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${path}</svg>`;
@@ -132,7 +144,7 @@ function generateLoot(type = null, tierLevel = -1) {
             tier: 0,
             stackable: true,
             count: MathUtils.randInt(1, 5),
-            desc: isFuel ? 'Restores 5 Fuel on use.' : 'Can be traded or scrapped.'
+            desc: isFuel ? 'Restores 20 Fuel on use.' : 'Can be traded or scrapped.'
         };
     }
 
@@ -214,7 +226,6 @@ function generateLoot(type = null, tierLevel = -1) {
         if (type === 'Primary Weapon') { item.perk = 'Triple Shot'; item.statLines.push(`[PERK] Shoots 3 bullets in a cone`); }
         if (type === 'Secondary Weapon') { item.perk = 'Explosive Enemies'; item.statLines.push(`[PERK] Enemies explode on death`); }
         if (type === 'Hull') { item.perk = 'Repairis'; item.statLines.push(`[PERK] Regenerates 1% Max HP every 2s`); }
-        if (type === 'Hull') { item.perk = 'Repairis'; item.statLines.push(`[PERK] Regenerates 1% Max HP every 2s`); }
         if (type === 'Shields') { item.perkReflect = MathUtils.randInt(10, 20); item.perk = 'Reflect'; item.statLines.push(`[PERK] Reflects ${item.perkReflect}% damage`); }
         if (type === 'Engine') { item.perk = 'Fuel Efficiency'; item.statLines.push(`[PERK] 25% better fuel efficiency`); }
         if (type === 'Reactor') { item.perk = 'XP Boost'; item.statLines.push(`[PERK] +15% XP & Orb pull range`); }
@@ -244,7 +255,7 @@ const BASE_STATS = {
     maxEnergy: 100, energy: 100, energyRegen: 10,
     maxFuel: 100, fuel: 100,
     maxSpeed: 300, acceleration: 400, friction: 0.95,
-    damage: { min: 9, max: 13 }, fireRate: 100
+    damage: { min: 9, max: 13 }, fireRate: 100, critChance: 5
 };
 
 const player = {
@@ -259,7 +270,7 @@ const player = {
     xpNext: 100,
     stats: { ...BASE_STATS },
     statBreakdown: {},
-    timers: { dodge: 0, shieldRegen: 0 },
+    timers: { dodge: 0, shieldRegen: 0, repairis: 0 },
     skills: [
         { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.2, type: 'projectile' },
         { id: 2, name: 'EMP Blast', cost: 30, cd: 0, maxCd: 5.0, type: 'aoe' },
@@ -276,6 +287,7 @@ const player = {
             this.xpNext = 100 * this.level; // Requires more total XP linearly
             
             // Level Up Rewards
+            // Level Up Rewards (Base Stats Scaling)
             BASE_STATS.maxHp += 20;
             BASE_STATS.damage.min += 1;
             BASE_STATS.damage.max += 2;
@@ -359,7 +371,8 @@ const player = {
         }
         
         if (equipment['Shields'] && equipment['Shields'].perk === 'Reflect' && source && typeof source.takeDamage === 'function') {
-            source.takeDamage(amount * (equipment['Shields'].perkReflect / 100), this);
+            let reflectPct = equipment['Shields'].upgradedPerk ? 50 : equipment['Shields'].perkReflect;
+            source.takeDamage(amount * (reflectPct / 100), this);
         }
         
         let oldHp = this.stats.hp;
@@ -494,8 +507,10 @@ class Asteroid {
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
+        let critInfo = calculateCrit(amount, source);
+        amount = critInfo.amount;
         this.hp -= amount;
-        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
 
@@ -509,7 +524,13 @@ class Asteroid {
             if(Math.random() < 0.3) {
                 let totalXp = player.level * 1;
                 let numOrbs = MathUtils.randInt(1, 3);
-                for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, totalXp / numOrbs));
+                let xpPerOrb = totalXp / numOrbs;
+                for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb));
+                
+                if (equipment['Reactor'] && equipment['Reactor'].upgradedPerk) {
+                    let bonusOrbs = MathUtils.randInt(3, 5);
+                    for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.2, true));
+                }
             }
             return true; // remove
         }
@@ -713,16 +734,23 @@ class Enemy {
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
+        let critInfo = calculateCrit(amount, source);
+        amount = critInfo.amount;
         this.hp -= amount;
-        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
-            if (source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies') {
+
+            let isNormalFlak = source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies';
+            let isChainedFlak = source.isFlak && source.upgradedFlak;
+            
+            if (isNormalFlak || isChainedFlak) {
                 createParticles(this.x, this.y, this.z, 50, '#ffaa00');
+                let isUpgraded = isChainedFlak ? true : equipment['Secondary Weapon'].upgradedPerk;
+                let explosionSource = { stats: player.stats, isFlak: true, upgradedFlak: isUpgraded };
                 for(let other of entities) {
                     if (other instanceof Enemy && !other.dead && other !== this && MathUtils.distance(this.x, this.y, other.x, other.y) < 200) {
-                        other.takeDamage(getDamage(player), player, '#ffaa00'); 
-                        other.takeDamage(getDamage(player) * 0.5, player, '#ffaa00'); 
+                        other.takeDamage(getDamage(player) * 0.5, explosionSource, '#ffaa00');
                     }
                 }
             }
@@ -735,6 +763,11 @@ class Enemy {
             let numOrbs = MathUtils.randInt(3, 5);
             let xpPerOrb = totalXp / numOrbs;
             for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb));
+            
+            if (equipment['Reactor'] && equipment['Reactor'].upgradedPerk) {
+                let bonusOrbs = MathUtils.randInt(3, 5);
+                for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.2, true));
+            }
             
             return true;
         }
@@ -760,7 +793,7 @@ class Projectile {
         this.life -= dt;
         
         // Particles trail
-        if(this.type !== 'bullet' && Math.random() < 0.3) createParticles(this.x, this.y, 0, 1, this.color, 0.5);
+        if(Math.random() < 0.3) createParticles(this.x, this.y, 0, 1, this.color, 0.5);
 
         // Collisions
         if(this.isPlayer) {
@@ -805,6 +838,91 @@ class Projectile {
         } else {
             ctx.beginPath(); ctx.arc(p.x, p.y, 3 * getScale(this.z), 0, Math.PI*2); ctx.fill();
         }
+        ctx.shadowBlur = 0;
+    }
+}
+
+class WhipBeam {
+    constructor(x, y, angle, damage, color, source) {
+        this.x = x; this.y = y; this.z = 0;
+        this.angle = angle;
+        this.damage = damage;
+        this.color = color;
+        this.source = source;
+        this.life = 0.2;
+        this.maxLife = 0.2;
+
+        let maxDist = 1200;
+        let endX = this.x + Math.cos(this.angle) * maxDist;
+        let endY = this.y + Math.sin(this.angle) * maxDist;
+
+        let target = null;
+        let closestSnapDist = Infinity;
+        let snappedTargetDist = Infinity;
+
+        for (let e of entities) {
+            if (e instanceof Enemy && !e.dead && e.z <= 0) {
+                let eDist = MathUtils.distance(this.x, this.y, e.x, e.y);
+                if (eDist <= maxDist) {
+                    let num = Math.abs((endX - this.x)*(this.y - e.y) - (this.x - e.x)*(endY - this.y));
+                    let snapDist = num / maxDist;
+                    if (snapDist < 60) {
+                        if (eDist < snappedTargetDist) {
+                            snappedTargetDist = eDist;
+                            closestSnapDist = snapDist;
+                            target = e;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (target) {
+            this.targetX = target.x; this.targetY = target.y;
+            target.takeDamage(this.damage, this.source, this.color);
+            shockwaves.push(new Shockwave(target.x, target.y, target.z, this.color, 40));
+        } else {
+            this.targetX = endX; this.targetY = endY;
+        }
+
+        let len = MathUtils.distance(this.x, this.y, this.targetX, this.targetY);
+        for (let e of entities) {
+            if (e instanceof Enemy && !e.dead && e !== target && e.z <= 0) {
+                let eDist = MathUtils.distance(this.x, this.y, e.x, e.y);
+                if (eDist <= len) {
+                    let num = Math.abs((this.targetX - this.x)*(this.y - e.y) - (this.x - e.x)*(this.targetY - this.y));
+                    let dLine = num / len;
+                    if (dLine < e.radius + 15) e.takeDamage(this.damage * 0.5, this.source, this.color);
+                }
+            }
+        }
+
+        this.points = [{x: this.x, y: this.y}];
+        let segments = 8;
+        for(let i=1; i<segments; i++) {
+            let t = i/segments;
+            this.points.push({
+                x: MathUtils.lerp(this.x, this.targetX, t) + MathUtils.rand(-20, 20),
+                y: MathUtils.lerp(this.y, this.targetY, t) + MathUtils.rand(-20, 20)
+            });
+        }
+        this.points.push({x: this.targetX, y: this.targetY});
+    }
+    update(dt) { this.life -= dt; return this.life <= 0; }
+    draw(ctx) {
+        ctx.strokeStyle = this.color;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.lineWidth = 4 * (this.life / this.maxLife);
+        ctx.beginPath();
+        for(let i=0; i<this.points.length; i++) {
+            let p = project(this.points[i].x, this.points[i].y, 0);
+            if(p) {
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            }
+        }
+        ctx.stroke();
         ctx.shadowBlur = 0;
     }
 }
@@ -868,7 +986,7 @@ class HomingMissile {
     constructor(x, y, angle, hp, source) {
         this.x = x; this.y = y; this.z = 0;
         this.angle = angle;
-        this.speed = player.stats.maxSpeed * 1.10;
+        this.speed = player.stats.maxSpeed * 0.85;
         this.fuel = 100;
         this.maxHp = hp;
         this.hp = hp;
@@ -963,8 +1081,10 @@ class HomingMissile {
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
+        let critInfo = calculateCrit(amount, source);
+        amount = critInfo.amount;
         this.hp -= amount;
-        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}`, this.x, this.y, color, 1.0, false, true);
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
             createParticles(this.x, this.y, 0, 30, '#888');
@@ -980,7 +1100,7 @@ class Boss extends Enemy {
         super(x, y);
         this.radius = 40;
         this.level = player.level;
-        this.maxHp = 800 * (1 + (this.level - 1) * 0.5);
+        this.maxHp = 1500 * (1 + (this.level - 1) * 0.5);
         this.hp = this.maxHp;
         this.damage = 50 * (1 + (this.level - 1) * 0.3);
         this.speed = 100;
@@ -1078,6 +1198,12 @@ class Boss extends Enemy {
             let numOrbs = 50;
             let xpPerOrb = totalXp / numOrbs;
             for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb));
+            
+            if (equipment['Reactor'] && equipment['Reactor'].upgradedPerk) {
+                let bonusOrbs = MathUtils.randInt(3, 5);
+                for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.2, true));
+            }
+
             for(let i=0; i<10; i++) spawnDrop(this.x, this.y, true);
 
             let slots = [...SLOT_TYPES];
@@ -1135,6 +1261,7 @@ class Singularity {
                 for(let e of entities) {
                     if (e instanceof Enemy && !e.dead && e.z <= 0 && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
                         e.takeDamage(getDamage(player) * 0.25, player, '#9933ff');
+                        e.takeDamage(getDamage(player) * 0.35, player, '#9933ff');
                     }
                 }
             }
@@ -1157,6 +1284,7 @@ class Singularity {
                 for(let e of entities) {
                     if (!e.dead && (e instanceof Enemy || e instanceof Asteroid) && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
                         e.takeDamage(getDamage(player) * 20, player, '#9933ff');
+                        e.takeDamage(getDamage(player) * 2, player, '#9933ff');
                     }
                 }
                 if (player.activeSingularity === this) {
@@ -1190,11 +1318,12 @@ class Singularity {
 }
 
 class WarpTrail {
-    constructor(x1, y1, x2, y2, width, dps, color) {
+        constructor(x1, y1, x2, y2, width, mult, color) {
         this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
         this.z = 0;
         this.width = width;
         this.dps = dps;
+        this.mult = mult;
         this.color = color;
         this.life = 1.5;
         this.maxLife = 1.5;
@@ -1234,6 +1363,7 @@ class WarpTrail {
                     let dist = MathUtils.distance(e.x, e.y, projX, projY);
                     if (dist < (this.width / 2) + e.radius) {
                         e.takeDamage(this.dps * 0.25, player, this.color);
+                        e.takeDamage(getDamage(player) * this.mult * 0.25, player, this.color);
                     }
                 }
             }
@@ -1312,10 +1442,11 @@ class Drop {
 }
 
 class XpOrb {
-    constructor(x, y, xpValue) {
+    constructor(x, y, xpValue, isBonus = false) {
         this.x = x; this.y = y; this.z = 0;
         this.xpValue = xpValue;
-        this.radius = 4;
+        this.isBonus = isBonus;
+        this.radius = isBonus ? 5 : 4;
         let ang = MathUtils.rand(0, Math.PI * 2);
         let spd = MathUtils.rand(50, 100);
         this.vx = Math.cos(ang) * spd;
@@ -1352,11 +1483,18 @@ class XpOrb {
         if(!p) return;
         let s = getScale(this.z);
         let pulse = 1 + 0.4 * Math.sin(this.life * 8);
-        ctx.fillStyle = '#00ff66';
+        let color = this.isBonus ? '#aaffcc' : '#00ff66';
+        ctx.fillStyle = color;
         ctx.shadowBlur = 10;
-        ctx.shadowColor = '#00ff66';
+        ctx.shadowColor = color;
         ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
+        
+        if (this.isBonus) {
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.stroke();
+        }
     }
 }
 
@@ -1413,18 +1551,26 @@ class Particle {
 }
 
 class FloatingText {
-    constructor(text, x, y, color, life = 1.0, isLoot = false, isDamage = false) {
+    constructor(text, x, y, color, life = 1.0, isLoot = false, isDamage = false, isCrit = false) {
         this.text = text; this.x = x; this.y = y; this.z = 0;
         this.life = life; this.maxLife = life;
         this.color = color;
         this.isLoot = isLoot;
         this.isDamage = isDamage;
+        this.isCrit = isCrit;
         
         if (isLoot) {
             let ang = MathUtils.rand(0, Math.PI * 2);
             let spd = MathUtils.rand(400, 700); // More aggressive outward burst
             this.vx = Math.cos(ang) * spd;
             this.vy = Math.sin(ang) * spd;
+        } else if (isCrit) {
+            this.x += MathUtils.rand(-20, 20);
+            this.y += MathUtils.rand(-20, 20);
+            this.vx = 0;
+            this.vy = -10; // Sticky drift
+            this.life = life * 1.5;
+            this.maxLife = this.life;
         } else if (isDamage) {
             this.vx = MathUtils.rand(-50, 50);
             this.vy = MathUtils.rand(-150, -50);
@@ -1468,12 +1614,26 @@ class FloatingText {
         
         for(let j=0; j<lines.length; j++) {
             // Smaller size for Loot Title, slightly bigger for damage
-            let size = (this.isLoot && j > 0) ? 14 : (this.isLoot && j === 0 ? 18 : (this.isDamage ? 26 : 22));
-            ctx.font = `bold ${size}px Orbitron`;
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = 4;
-            ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
-            ctx.shadowBlur = 0;
+            let size = (this.isLoot && j > 0) ? 14 : (this.isLoot && j === 0 ? 18 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
+            ctx.font = this.isCrit ? `italic bold ${size}px Orbitron` : `bold ${size}px Orbitron`;
+            
+            if (this.isCrit) {
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = '#fff';
+                ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
+                
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 0;
+                ctx.strokeText(lines[j], p.x, p.y + j * (size + 4));
+            } else {
+                ctx.shadowColor = 'black';
+                ctx.shadowBlur = 4;
+                ctx.fillStyle = this.color;
+                ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
+                ctx.shadowBlur = 0;
+            }
         }
         ctx.globalAlpha = 1.0;
     }
@@ -1508,8 +1668,8 @@ function createParticles(x, y, z, count, color, life=1.0) {
     for(let i=0; i<count; i++) particles.push(new Particle(x, y, z, color, life));
 }
 
-function createFloatingText(text, x, y, color, life = 1.0, isLoot = false, isDamage = false) {
-    floatingTexts.push(new FloatingText(text, x, y, color, life, isLoot, isDamage));
+function createFloatingText(text, x, y, color, life = 1.0, isLoot = false, isDamage = false, isCrit = false) {
+    floatingTexts.push(new FloatingText(text, x, y, color, life, isLoot, isDamage, isCrit));
 }
 
 function spawnDrop(x, y, forceResource = false, item = null) {
@@ -1618,6 +1778,123 @@ function updateUI() {
     document.getElementById('fuel-fill').style.width = `${(player.stats.fuel / player.stats.maxFuel)*100}%`;
     document.getElementById('fuel-text').innerText = `FUEL: ${Math.floor(player.stats.fuel)}`;
 
+let dragSource = null;
+function handleDrop(e, targetType, targetId) {
+    e.preventDefault();
+    if (!dragSource) return;
+
+    let srcItem = dragSource.type === 'inv' ? inventory[dragSource.index] : equipment[dragSource.slot];
+    let tgtItem = targetType === 'inv' ? inventory[targetId] : equipment[targetId];
+
+    if (!srcItem) return;
+
+    if (srcItem.type === 'Upgrade Material' && srcItem.count >= 3 && tgtItem && tgtItem.tier === srcItem.tier && !tgtItem.upgraded && tgtItem.type !== 'Upgrade Material' && tgtItem.type !== 'Resource' && tgtItem.type !== 'Fuel') {
+        openUpgradeModal(tgtItem, dragSource, targetType, targetId);
+        dragSource = null;
+        return;
+    }
+
+    if (dragSource.type === 'inv' && targetType === 'inv') {
+        let temp = inventory[targetId];
+        inventory[targetId] = inventory[dragSource.index];
+        inventory[dragSource.index] = temp;
+        updateUI();
+    }
+
+    dragSource = null;
+}
+
+let pendingUpgrade = null;
+function openUpgradeModal(targetItem, srcInfo, tgtType, tgtId) {
+    pendingUpgrade = { item: targetItem, srcInfo, tgtType, tgtId };
+    let modal = document.getElementById('upgrade-modal');
+    let opts = document.getElementById('upg-options');
+    opts.innerHTML = '';
+    
+    for (let stat in targetItem.stats) {
+        let btn = document.createElement('button');
+        btn.className = 'upg-btn';
+        let line = targetItem.statLines.find(l => !l.startsWith('[PERK]') && l.toLowerCase().includes(stat.replace('Rating', '').toLowerCase()));
+        if(!line) line = `Upgrade ${stat}`;
+        btn.innerHTML = `Buff: ${line}`;
+        btn.onclick = () => confirmUpgrade(stat);
+        opts.appendChild(btn);
+    }
+    if (targetItem.perk) {
+        let btn = document.createElement('button');
+        btn.className = 'upg-btn';
+        let line = targetItem.statLines.find(l => l.startsWith('[PERK]'));
+        btn.innerHTML = `Upgrade Perk: ${line.replace('[PERK] ', '')}`;
+        btn.onclick = () => confirmUpgrade('PERK');
+        opts.appendChild(btn);
+    }
+    modal.style.display = 'block';
+    GAME.state = 'INVENTORY';
+}
+
+function closeUpgradeModal() {
+    document.getElementById('upgrade-modal').style.display = 'none';
+    pendingUpgrade = null;
+}
+
+function confirmUpgrade(choice) {
+    if(!pendingUpgrade) return;
+    let { item, srcInfo } = pendingUpgrade;
+    
+    let srcItem = srcInfo.type === 'inv' ? inventory[srcInfo.index] : null;
+    if (srcItem && srcItem.count >= 3) {
+        srcItem.count -= 3;
+        if (srcItem.count <= 0) inventory[srcInfo.index] = null;
+    } else {
+        closeUpgradeModal();
+        return;
+    }
+
+    item.upgraded = true;
+
+    if (choice === 'PERK') {
+        item.upgradedPerk = true;
+        let pIdx = item.statLines.findIndex(l => l.startsWith('[PERK]'));
+        if (pIdx !== -1) {
+            let newLine = item.statLines[pIdx].replace('[PERK]', '[UPGRADED PERK]');
+            if(item.type === 'Primary Weapon') newLine = newLine.replace('Shoots 3 bullets in a cone', 'Whip-like energy beam that snaps to targets');
+            if(item.type === 'Secondary Weapon') newLine = newLine.replace('Enemies explode on death', 'Enemy explosions chain on kill');
+            if(item.type === 'Hull') newLine = newLine.replace('1% Max HP every 2s', '3% Max HP every 5s');
+            if(item.type === 'Shields') newLine = newLine.replace(/Reflects \d+% damage/, 'Always reflects 50% damage');
+            if(item.type === 'Engine') newLine = newLine.replace('25%', '30%').replace('efficiency', 'efficiency, Fuel Cells restore 30');
+            if(item.type === 'Reactor') newLine = newLine.replace('+15% XP & Orb pull range', '+15% XP & Pull. Drop 3-5 bonus (+20% XP) orbs');
+            item.statLines[pIdx] = `<b>${newLine}</b>`;
+        }
+    } else {
+        let oldMult = 1 + (item.itemLevel - 1) * 0.15;
+        let newMult = 1 + (item.itemLevel + 2) * 0.15;
+        let ratio = newMult / oldMult;
+
+        let val = item.stats[choice];
+        let isObj = typeof val === 'object';
+        let oldStr = '';
+        let newStr = '';
+
+        if (isObj) {
+            oldStr = `${val.min}-${val.max}`;
+            val.min = Math.ceil(val.min * ratio);
+            val.max = Math.ceil(val.max * ratio);
+            newStr = `${val.min}-${val.max}`;
+        } else {
+            oldStr = val.toString();
+            item.stats[choice] = Math.ceil(val * ratio);
+            newStr = item.stats[choice].toString();
+        }
+
+        let sIdx = item.statLines.findIndex(l => !l.startsWith('[PERK]') && l.includes(oldStr));
+        if (sIdx !== -1) item.statLines[sIdx] = `<b>${item.statLines[sIdx].replace(oldStr, newStr)}</b>`;
+    }
+
+    player.updateStats();
+    closeUpgradeModal();
+    updateUI();
+}
+
     // Skills CD & Energy check
     for(let i=0; i<4; i++) {
         let skill = player.skills[i];
@@ -1661,6 +1938,14 @@ function renderInventory() {
                 <div class="inv-item" style="border: 2px solid ${color}; color: ${color};">
                     ${iconInfo.raw}
                 </div>`;
+            div.draggable = true;
+            div.ondragstart = (e) => {
+                dragSource = { type: 'inv', index: i };
+                e.dataTransfer.setData('text/plain', '');
+            };
+            div.ondrop = (e) => handleDrop(e, 'inv', i);
+            div.ondragover = (e) => e.preventDefault();
+            
             if(item.stackable && item.count > 1) {
                 div.innerHTML += `<div class="stack-count">${item.count}</div>`;
             }
@@ -1686,11 +1971,21 @@ function renderEquipment() {
             hudEl.innerHTML = `<div style="color: ${color}; width:100%; height:100%; display:flex; align-items:center; justify-content:center;">${iconInfo.raw}</div>`;
             hudEl.onmouseover = (e) => showEquipTooltip(key, e);
             hudEl.onmouseout = hideTooltip;
+            
+            el.draggable = true;
+            el.ondragstart = (e) => { dragSource = { type: 'eq', slot: key }; e.dataTransfer.setData('text/plain', ''); };
+            
+            if (item.upgraded) el.classList.add('holographic');
+            else el.classList.remove('holographic');
         } else {
             el.innerHTML = `<div class="slot-name">${key}</div><div class="slot-content">Empty</div>`;
             hudEl.innerHTML = `<div style="font-size:8px; color:#555; text-align:center;">${key}</div>`;
             hudEl.onmouseover = null;
+            el.draggable = false;
+            el.classList.remove('holographic');
         }
+        el.ondrop = (e) => handleDrop(e, 'eq', key);
+        el.ondragover = (e) => e.preventDefault();
     }
 }
 
@@ -1717,6 +2012,7 @@ function renderStats() {
     container.innerHTML = `
         ${getStatHtml('damage', 'Damage', 'Base damage for your weapons and abilities.', v => v.min + '-' + v.max)}
         ${getStatHtml('fireRate', 'Fire Rate', 'Increases the attack speed of your Primary Weapon.', v => Math.round(v) + '%')}
+        ${getStatHtml('critChance', 'Crit Chance', 'Chance to deal double damage on hit.', v => v + '%')}
         ${getStatHtml('maxHp', 'Max HP', 'Maximum Hull Integrity. If it reaches 0, you explode.')}
         ${getStatHtml('armorRating', 'Armor Rating', 'Increases Damage Reduction against incoming attacks.')}
         <div class="stat-row" onmouseover="showTooltip('Damage Reduction', 'Percentage of incoming hull damage mitigated.', '', event)" onmouseout="hideTooltip()">
@@ -1761,7 +2057,8 @@ function useItem(index) {
 
     if (item.type === 'Fuel') {
         playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
-        player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + 5);
+        let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
+        player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
         if(item.count <= 0) inventory[index] = null;
         updateUI();
@@ -1795,15 +2092,30 @@ function dropItem(index) {
     let item = inventory[index];
     if(item) {
         inventory[index] = null;
-        pickupItem({
-            id: Math.random().toString(36).substr(2, 9),
-            name: 'Raw Minerals',
-            type: 'Resource',
-            tier: 0,
-            stackable: true,
-            count: item.tier + 1,
-            desc: 'Can be traded or scrapped.'
-        });
+        let yieldItem;
+        if (SLOT_TYPES.includes(item.type)) {
+            yieldItem = {
+                id: Math.random().toString(36).substr(2, 9),
+                name: `${TIERS[item.tier].name} Core`,
+                type: 'Upgrade Material',
+                tier: item.tier,
+                stackable: true,
+                count: 1,
+                desc: `Combine 3 to upgrade a ${TIERS[item.tier].name} item.`
+            };
+        } else {
+            let cnt = item.type === 'Upgrade Material' ? 1 : item.tier + 1;
+            yieldItem = {
+                id: Math.random().toString(36).substr(2, 9),
+                name: 'Raw Minerals',
+                type: 'Resource',
+                tier: 0,
+                stackable: true,
+                count: cnt,
+                desc: 'Can be traded or scrapped.'
+            };
+        }
+        pickupItem(yieldItem);
         updateUI();
         hideTooltip();
     }
@@ -1869,7 +2181,8 @@ function showItemTooltip(item, e) {
 
     if (item.perk) {
         let perkLine = item.statLines.find(l => l.startsWith('[PERK]'));
-        if(perkLine) statsHtml.push(`<span style="color:#f82">${perkLine}</span>`);
+        if (!perkLine) perkLine = item.statLines.find(l => l.startsWith('[UPGRADED PERK]'));
+        if(perkLine) statsHtml.push(`<span style="color:${item.upgradedPerk ? '#ff00ff' : '#f82'}">${perkLine}</span>`);
     } else if (item.statLines && !item.stats) {
         statsHtml.push(...item.statLines);
     }
@@ -1884,7 +2197,8 @@ function showItemTooltip(item, e) {
         let eqStatsHtml = eqItem.statLines ? [...eqItem.statLines] : [];
         if(eqItem.perk) {
             let pIdx = eqStatsHtml.findIndex(l => l.startsWith('[PERK]'));
-            if(pIdx !== -1) eqStatsHtml[pIdx] = `<span style="color:#f82">${eqStatsHtml[pIdx]}</span>`;
+            if(pIdx === -1) pIdx = eqStatsHtml.findIndex(l => l.startsWith('[UPGRADED PERK]'));
+            if(pIdx !== -1) eqStatsHtml[pIdx] = `<span style="color:${eqItem.upgradedPerk ? '#ff00ff' : '#f82'}">${eqStatsHtml[pIdx]}</span>`;
         }
         document.getElementById('tt-eq-stats').innerHTML = eqStatsHtml.join('<br>');
     } else {
@@ -1902,6 +2216,9 @@ function showSkillTooltip(id, e) {
     let dmgStr = `${player.stats.damage.min}-${player.stats.damage.max}`;
     let dmg2Str = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
     let dmg20Str = `${player.stats.damage.min * 20}-${player.stats.damage.max * 20}`;
+    let dmgEmpStr = `${Math.floor(player.stats.damage.min * 0.75)}-${Math.floor(player.stats.damage.max * 0.75)}`;
+    let dmgWarpStr = `${Math.floor(player.stats.damage.min * 0.75)}-${Math.floor(player.stats.damage.max * 0.75)}`;
+    let dmgSingExpStr = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
 
     let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
     let projCount = hasTriple ? 3 : 1;
@@ -1913,6 +2230,9 @@ function showSkillTooltip(id, e) {
         `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmg2Str}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
         `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgStr}</span> damage per second.<br>Width: 170 units`,
         `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmg20Str}</span> damage.`
+        `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmgEmpStr}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
+        `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgWarpStr}</span> damage per second.<br>Width: 170 units`,
+        `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmgSingExpStr}</span> damage.`
     ];
     showTooltip(skill.name, descs[id-1], `Cost: ${skill.cost} ${skill.isFuel ? 'Fuel' : 'Energy'}<br>Cooldown: ${skill.maxCd.toFixed(2)}s`, e);
 }
@@ -1975,7 +2295,12 @@ function useSkill(index) {
     
     if(index === 0) { // Pulse Blaster
         let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
-        if (hasTriple) {
+        let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
+        
+        if (isTripleUpgraded) {
+            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserLarge_001.ogg');
+            projectiles.push(new WhipBeam(player.x, player.y, angle, getDamage(player), varColor('--accent'), player));
+        } else if (hasTriple) {
             playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserLarge_001.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
@@ -1990,9 +2315,9 @@ function useSkill(index) {
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
-            // Reduced 40% (450 -> 270)
             if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
                 e.takeDamage(getDamage(player) * 2, player, varColor('--shield'));
+                e.takeDamage(getDamage(player) * 0.75, player, varColor('--shield'));
                 e.stunTimer = 3.0;
             }
         }
@@ -2006,6 +2331,7 @@ function useSkill(index) {
         player.y += Math.sin(angle) * dist;
         
         warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, getDamage(player), varColor('--energy')));
+        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, 0.75, varColor('--energy')));
     }
     else if(index === 3) { // Singularity
         playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/engineCircular_000.ogg');
@@ -2019,8 +2345,16 @@ function update(dt) {
     if(GAME.state !== 'PLAYING') return;
 
     if (equipment['Hull'] && equipment['Hull'].perk === 'Repairis') {
-        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.01) * dt);
-        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.005) * dt);
+        if (equipment['Hull'].upgradedPerk) {
+            player.timers.repairis = (player.timers.repairis || 0) + dt;
+            if (player.timers.repairis >= 5.0) {
+                player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + player.stats.maxHp * 0.03);
+                player.timers.repairis -= 5.0;
+                createFloatingText("+3% HP", player.x, player.y, '#00ff00', 1.5, false, true);
+            }
+        } else {
+            player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.005) * dt);
+        }
     }
 
     // --- Player Movement & Physics ---
@@ -2094,7 +2428,11 @@ function update(dt) {
 
     // --- Resource Regen & Drain ---
     if(speed > 10) {
-        let eff = (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') ? 0.75 : 1.0;
+        let eff = 1.0;
+        if (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') {
+            eff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
+        }
+        
         player.stats.fuel -= (speed / player.stats.maxSpeed) * 15 * eff * dt;
         if(player.stats.fuel < 0) player.stats.fuel = 0;
         // Engine particles
@@ -2378,7 +2716,8 @@ function useFuelCell() {
     if (idx !== -1) {
         playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
         let item = inventory[idx];
-        player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + 12);
+        let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
+        player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
         if (item.count <= 0) inventory[idx] = null;
         updateUI();
@@ -2397,7 +2736,7 @@ inventory[0] = {
     itemLevel: 1,
     stackable: true,
     count: 3,
-    desc: 'Restores 12 Fuel on use.'
+    desc: 'Restores 20 Fuel on use.'
 };
 updateUI();
 requestAnimationFrame(t => { GAME.lastTime = t; loop(t); });
