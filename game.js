@@ -71,6 +71,7 @@ window.addEventListener('resize', () => {
 const AUDIO_CACHE = {};
 function playSound(file, volume = 0.5) {
     if(!AUDIO_CACHE[file]) {
+        newAudio.crossOrigin = "anonymous";
         AUDIO_CACHE[file] = new Audio(file);
     }
     let audio = AUDIO_CACHE[file].cloneNode();
