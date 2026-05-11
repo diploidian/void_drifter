@@ -285,7 +285,7 @@ const player = {
     statBreakdown: {},
     timers: { dodge: 0, shieldRegen: 0, repairis: 0, immunity: 0, mycelialDebuff: 0, dashActive: 0 },
     skills: [
-        { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.3, type: 'projectile' },
+        { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.25, type: 'projectile' },
         { id: 2, name: 'EMP Blast', cost: 20, cd: 0, maxCd: 5.0, type: 'aoe' },
         { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 3.0, type: 'dash', isFuel: true },
         { id: 4, name: 'Singularity Torpedo', cost: 40, cd: 0, maxCd: 10.0, type: 'special' }
@@ -2949,7 +2949,7 @@ function update(dt) {
             eff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
         }
         
-        player.stats.fuel -= (speed / player.stats.maxSpeed) * 15 * eff * dt;
+        player.stats.fuel -= (speed / player.stats.maxSpeed) * 9 * eff * dt;
         if(player.stats.fuel < 0) player.stats.fuel = 0;
         // Engine particles
         if(Math.random() < 0.5) {
