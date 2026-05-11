@@ -71,6 +71,7 @@ window.addEventListener('resize', () => {
 const AUDIO_CACHE = {};
 function playSound(file, volume = 0.5) {
     if(!AUDIO_CACHE[file]) {
+        let newAudio = new Audio(file)
         newAudio.crossOrigin = "anonymous";
         AUDIO_CACHE[file] = new Audio(file);
     }
@@ -690,14 +691,14 @@ class Enemy {
                 // 2. Check if it is time for a Rapid Fire sequence
                 if (this.rapidShotTimer <= 0 && this.rapidShotsToFire === 0) {
                     this.rapidShotsToFire = 2;
-                    this.rapidShotInterval = 0;
+                    this.rapidShotInterval = 0.5;
                     this.rapidShotTimer = 10.0;
                 }
 
                 // 3. Handle the Rapid Fire sequence
                 if (this.rapidShotsToFire > 0) {
                     if (this.rapidShotInterval <= 0) {
-                        projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
+                        projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this), false, this.color, this));
                         this.rapidShotsToFire--;
                         this.rapidShotInterval = 0.2; 
                         
@@ -709,7 +710,7 @@ class Enemy {
                 } 
                 // 4. Otherwise, fire a normal shot
                 else {
-                    projectiles.push(new Projectile(this.x, this.y, angle, 300, getDamage(this), false, this.color, this));
+                    projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this), false, this.color, this));
                     this.attackTimer = 2.0;
                 }
             }
@@ -962,7 +963,7 @@ class MycelialSpreader extends Enemy {
 }
 
 class BrutalistMonolith extends Asteroid {
-    constructor(x, y, level) {
+    constructor(x, y, level, damage = 0, source = null) {
         super(x, y, 35); // Fixed 35 radius for precision trap
         this.vx = 0; 
         this.vy = 0; 
@@ -970,11 +971,48 @@ class BrutalistMonolith extends Asteroid {
         this.maxHp = 20 * level; // Low HP scale
         this.hp = this.maxHp;
         this.height = 60; // Visual height
+        this.telegraphTimer = 1.5;
+        this.damage = damage;
+        this.source = source;
     }
-    draw(ctx) {
+    update(dt) {
         let p = project(this.x, this.y, this.z);
         if(!p) return;
         let scale = getScale(this.z);
+        
+        if (this.telegraphTimer > 0) {
+            let progress = 1 - (this.telegraphTimer / 1.5);
+            let timeElapsed = 1.5 - this.telegraphTimer;
+            
+            // Ripple effect
+            let rippleCount = 3;
+            for (let i = 0; i < rippleCount; i++) {
+                let rProgress = (timeElapsed * (1 + progress * 2) + i / rippleCount) % 1.0;
+                ctx.strokeStyle = `rgba(255, 51, 102, ${1.0 - rProgress})`;
+                ctx.lineWidth = 2 * scale;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, this.radius * scale * rProgress, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Target boundary
+            let freq = 10 + progress * 20; 
+            let pulse = (Math.sin(timeElapsed * freq) + 1) / 2;
+            
+            ctx.strokeStyle = `rgba(255, 51, 102, ${0.5 + 0.5 * pulse})`;
+            ctx.lineWidth = (2 + 2 * pulse) * scale;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, this.radius * scale, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Growing red core
+            ctx.fillStyle = `rgba(255, 51, 102, ${progress * 0.4})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, this.radius * scale * progress, 0, Math.PI * 2);
+            ctx.fill();
+
+            return;
+        }
         
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -1061,15 +1099,7 @@ class MonolithArchitect extends Enemy {
         
         this.summonTimer -= dt;
         if (this.summonTimer <= 0) {
-            let baseAngle = Math.random() * Math.PI * 2;
-            let spawnRadius = 65; // traps player tightly, leaving a tiny squeeze window between monoliths
-            for (let i = 0; i < 3; i++) {
-                let a = baseAngle + (i * Math.PI * 2 / 3);
-                let mx = player.x + Math.cos(a) * spawnRadius;
-                let my = player.y + Math.sin(a) * spawnRadius;
-                entities.push(new BrutalistMonolith(mx, my, this.level));
-                createParticles(mx, my, 0, 30, '#555');
-            }
+            entities.push(new BrutalistMonolith(player.x, player.y, this.level, getDamage(this) * 2, this));
             this.summonTimer = this.summonCooldown;
         }
         return false;
