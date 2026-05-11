@@ -7,7 +7,13 @@ const MathUtils = {
     distance: (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1),
     angle: (x1, y1, x2, y2) => Math.atan2(y2 - y1, x2 - x1),
     lerp: (a, b, t) => a + (b - a) * t,
-    clamp: (val, min, max) => Math.max(min, Math.min(max, val))
+    clamp: (val, min, max) => Math.max(min, Math.min(max, val)),
+    distToSegment: (px, py, x1, y1, x2, y2) => {
+        let l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+        if (l2 === 0) return Math.hypot(px - x1, py - y1);
+        let t = Math.max(0, Math.min(1, ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2));
+        return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+    }
 };
 
 function getDamage(source) {
@@ -49,6 +55,7 @@ const GAME = {
     camera: { x: 0, y: 0, zoom: 1.0 },
     bossSpawned: false,
     activeBoss: null,
+    bossDefeated: false,
     keys: { w: false, a: false, s: false, d: false, ' ': false, '1': false, '2': false, '3': false, '4': false, 'f': false },
     mouse: { x: cw/2, y: ch/2, worldX: 0, worldY: 0, left: false },
     fowMap: new Map(), // Fog of War visited chunks
@@ -130,7 +137,7 @@ function getFireRateBonus(rating, level) {
 }
 
 function getArmorReduction(rating, level) {
-    return Math.max(0, rating / (rating + 250 + level * 50));
+    return Math.max(0, rating / (rating + 250 + level * 25));
 }
 
 function getCritBonus(rating, level) {
@@ -138,16 +145,16 @@ function getCritBonus(rating, level) {
 }
 
 function generateLoot(type = null, tierLevel = -1) {
-    // 20% chance for junk/resources
-    if (Math.random() < 0.25 && type === null) {
-        const isFuel = Math.random() < 0.5;
+    // 25% chance for junk/resources, or if explicitly requested
+    if ((Math.random() < 0.25 && type === null) || type === 'force_resource') {
+        const isFuel = type === 'force_resource' ? (Math.random() < 0.75) : (Math.random() < 0.5);
         return {
             id: Math.random().toString(36).substr(2, 9),
             name: isFuel ? 'Fuel Cell' : 'Raw Minerals',
             type: isFuel ? 'Fuel' : 'Resource',
             tier: 0,
             stackable: true,
-            count: MathUtils.randInt(1, 5),
+            count: isFuel ? (type === 'force_resource' ? MathUtils.randInt(3, 6) : MathUtils.randInt(1, 5)) : MathUtils.randInt(1, 5),
             desc: isFuel ? 'Restores 20 Fuel on use.' : 'Can be traded or scrapped.'
         };
     }
@@ -192,7 +199,7 @@ function generateLoot(type = null, tierLevel = -1) {
 
     for (let stat of pickedStats) {
         let val = 0; let str = ''; let isObj = false;
-        if (stat === 'fireRateRating') { val = Math.floor(MathUtils.rand(10, 25) * tier.mult); str = `+${val} Fire Rate Rating`; }
+        if (stat === 'fireRateRating') { val = Math.floor(MathUtils.rand(10, 25) * tier.mult * lvlMult); str = `+${val} Fire Rate Rating`; }
         else if (stat === 'damage') { 
             let avgDmg = MathUtils.rand(10, 20) * tier.mult * lvlMult;
             let spread = Math.max(1, 6 - tierLevel) * 2; // Tighter spread for better tiers
@@ -274,12 +281,12 @@ const player = {
     xpNext: 100,
     stats: { ...BASE_STATS },
     statBreakdown: {},
-    timers: { dodge: 0, shieldRegen: 0, repairis: 0 },
+    timers: { dodge: 0, shieldRegen: 0, repairis: 0, immunity: 0, mycelialDebuff: 0 },
     skills: [
         { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.2, type: 'projectile' },
-        { id: 2, name: 'EMP Blast', cost: 30, cd: 0, maxCd: 5.0, type: 'aoe' },
+        { id: 2, name: 'EMP Blast', cost: 20, cd: 0, maxCd: 5.0, type: 'aoe' },
         { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 3.0, type: 'dash', isFuel: true },
-        { id: 4, name: 'Singularity Torpedo', cost: 50, cd: 0, maxCd: 10.0, type: 'special' }
+        { id: 4, name: 'Singularity Torpedo', cost: 40, cd: 0, maxCd: 10.0, type: 'special' }
     ],
     
     gainXp(amount) {
@@ -361,7 +368,9 @@ const player = {
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
-        this.skills[0].cost = 2 + Math.floor(0.01 * this.stats.maxEnergy * (this.level - 1));
+        this.skills[0].cost = 2 + Math.floor(this.stats.maxEnergy * 0.05); // Fractional cost based on max energy
+        this.skills[1].cost = Math.floor(this.stats.maxEnergy * 0.20);
+        this.skills[3].cost = Math.floor(this.stats.maxEnergy * 0.40);
         // 100 fire rate = 0.25s.
         this.skills[0].maxCd = 0.25 / (this.stats.fireRate / 100);
         
@@ -369,6 +378,10 @@ const player = {
     },
     
     takeDamage(amount, source) {
+        if (this.timers.immunity > 0) {
+            createFloatingText("IMMUNE", this.x, this.y, '#fff', 1.0, false, true);
+            return;
+        }
         let actualDamage = amount * (1 - this.stats.damageReduction);
         actualDamage = Math.max(1, actualDamage);
         if (this.stats.shields > 0) {
@@ -396,7 +409,7 @@ const player = {
             
             // Low HP sound trigger (triggers upon dropping to 25% or less)
             if (this.stats.hp > 0 && this.stats.hp <= this.stats.maxHp * 0.25 && oldHp > this.stats.maxHp * 0.25) {
-                playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/spaceEngine_000.ogg');
+                playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/spaceEngine_000.ogg');
             }
 
             // Screen Glow intensity increase
@@ -422,8 +435,11 @@ let projectiles = [];
 let drops = [];
 let floatingTexts = [];
 let xpOrbs = [];
+let hpOrbs = [];
 let shockwaves = [];
 let warpTrails = [];
+
+const HP_ORB_DROP_RATE = 0.10;
 
 class Asteroid {
     constructor(x, y, radius) {
@@ -527,10 +543,15 @@ class Asteroid {
 
             createParticles(this.x, this.y, this.z, 20, '#555');
             // Drop loot
-            for(let i=0; i<MathUtils.randInt(1, 3); i++) {
+            for(let i=0; i<MathUtils.randInt(2, 4); i++) {
                 spawnDrop(this.x, this.y, true); // force resource
             }
             if(Math.random() < 0.1) spawnDrop(this.x, this.y); // small chance for gear
+            
+            if (Math.random() < HP_ORB_DROP_RATE) {
+                hpOrbs.push(new HpOrb(this.x, this.y));
+            }
+
             // Small chance for fragments
             if(Math.random() < 0.3) {
                 let totalXp = player.level * 1;
@@ -769,6 +790,10 @@ class Enemy {
             createParticles(this.x, this.y, this.z, 30, this.color);
             if(Math.random() < 0.5) spawnDrop(this.x, this.y);
             
+            if (Math.random() < HP_ORB_DROP_RATE) {
+                hpOrbs.push(new HpOrb(this.x, this.y));
+            }
+
             // Drop XP Orbs
             let totalXp = 5 * this.level;
             let numOrbs = MathUtils.randInt(3, 5);
@@ -783,6 +808,298 @@ class Enemy {
             return true;
         }
         return false;
+    }
+}
+
+class FungalNode {
+    constructor(x, y, level) {
+        this.x = x; this.y = y; this.z = 0;
+        this.level = level;
+        this.radius = 12;
+        this.maxHp = 25 * level;
+        this.hp = this.maxHp;
+        this.dead = false;
+        this.pulseTimer = 0;
+        this.life = 45.0; // Dies naturally after 45s to avoid permanent clutter
+        this.links = []; // Connected Mycelial nodes
+    }
+    update(dt) {
+        if (this.dead) return true;
+        this.pulseTimer += dt;
+        this.life -= dt;
+        
+        if (this.life <= 0) {
+            this.dead = true;
+            createParticles(this.x, this.y, 0, 10, '#99ff33');
+            return true;
+        }
+        
+        // Form Mycelial Links
+        this.links = [];
+        for (let e of entities) {
+            if (e instanceof FungalNode && e !== this && !e.dead) {
+                if (MathUtils.distance(this.x, this.y, e.x, e.y) <= 400) {
+                    this.links.push(e);
+                }
+            }
+        }
+        
+        // Apply debuff if player is touching the mycelial web
+        for (let e of this.links) {
+            let d = MathUtils.distToSegment(player.x, player.y, this.x, this.y, e.x, e.y);
+            if (d < player.radius + 5) {
+                player.timers.mycelialDebuff = 0.5; // Stacks small chunks to maintain duration while crossed
+            }
+        }
+        
+        return false;
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let s = getScale(this.z);
+        
+        // Draw Links
+        ctx.strokeStyle = `rgba(153, 255, 51, ${0.4 + 0.2 * Math.sin(this.pulseTimer * 3)})`;
+        ctx.lineWidth = 2 * s;
+        ctx.beginPath();
+        for (let e of this.links) {
+            let p2 = project(e.x, e.y, e.z);
+            if (p2 && (e.x > this.x || (e.x === this.x && e.y > this.y))) { // Avoids double-drawing the same link back and forth
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p2.x, p2.y);
+            }
+        }
+        ctx.stroke();
+        
+        // Draw Node
+        ctx.fillStyle = '#223311';
+        ctx.strokeStyle = '#99ff33';
+        ctx.lineWidth = 2 * s;
+        let pulse = 1 + 0.1 * Math.sin(this.pulseTimer * 5);
+        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        
+        // Inner glowing core
+        ctx.fillStyle = `rgba(153, 255, 51, ${0.5 + 0.5 * Math.sin(this.pulseTimer * 5)})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * 0.5 * s * pulse, 0, Math.PI*2); ctx.fill();
+    }
+    takeDamage(amount, source, color = '#fff') {
+        if (this.dead) return false;
+        let critInfo = calculateCrit(amount, source);
+        amount = critInfo.amount;
+        this.hp -= amount;
+        if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
+        if(this.hp <= 0) {
+            this.dead = true;
+            createParticles(this.x, this.y, 0, 20, '#99ff33');
+            if (Math.random() < 0.2) xpOrbs.push(new XpOrb(this.x, this.y, this.level * 2));
+            if (Math.random() < HP_ORB_DROP_RATE) hpOrbs.push(new HpOrb(this.x, this.y));
+            return true;
+        }
+        return false;
+    }
+}
+
+class MycelialSpreader extends Enemy {
+    constructor(x, y) {
+        super(x, y);
+        this.radius = 20;
+        this.type = 'spreader';
+        this.color = '#99ff33'; // Bioluminescent Green
+        this.speed = 100 + this.level * 1.5;
+        this.maxHp = 100 * (1 + (this.level - 1) * 0.3);
+        this.hp = this.maxHp;
+        this.nodeTimer = 2.0; 
+    }
+    update(dt) {
+        if(super.update(dt)) return true; // Spawning or stun handling from superclass
+        if (this.dead) return true;
+        
+        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
+        let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
+        
+        // Spreader evades the player and attempts to circle around at mid-range
+        let targetDist = 600;
+        if (dist > targetDist + 50) {
+            this.vx = Math.cos(angle) * this.speed;
+            this.vy = Math.sin(angle) * this.speed;
+        } else if (dist < targetDist - 50) {
+            this.vx = -Math.cos(angle) * this.speed;
+            this.vy = -Math.sin(angle) * this.speed;
+        } else {
+            this.vx = Math.cos(angle + Math.PI/2) * this.speed * 0.5;
+            this.vy = Math.sin(angle + Math.PI/2) * this.speed * 0.5;
+        }
+        
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        this.nodeTimer -= dt;
+        if (this.nodeTimer <= 0) {
+            entities.push(new FungalNode(this.x, this.y, this.level));
+            this.nodeTimer = 5.0; // Every 5 seconds it drops a new fungal node
+        }
+    }
+    draw(ctx) {
+        super.draw(ctx);
+        // Add bioluminescent spots
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let scale = getScale(this.z);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(scale, scale);
+        ctx.rotate(Math.atan2(this.vy, this.vx));
+        
+        let pulse = (Math.sin(Date.now() / 200) + 1) / 2;
+        ctx.fillStyle = `rgba(153, 255, 51, ${0.3 + 0.7 * pulse})`;
+        ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(-10, 8, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(-10, -8, 3, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
+}
+
+class BrutalistMonolith extends Asteroid {
+    constructor(x, y, level) {
+        super(x, y, 35); // Fixed 35 radius for precision trap
+        this.vx = 0; 
+        this.vy = 0; 
+        this.rotSpeed = 0;
+        this.maxHp = 20 * level; // Low HP scale
+        this.hp = this.maxHp;
+        this.height = 60; // Visual height
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let scale = getScale(this.z);
+        
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(scale, scale);
+        
+        ctx.fillStyle = '#2a2a2a';
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 2;
+
+        // Base shadow/ellipse
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.radius, this.radius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+
+        // Body extending upwards visually
+        ctx.fillRect(-this.radius, -this.height, this.radius * 2, this.height);
+        ctx.beginPath(); ctx.moveTo(-this.radius, 0); ctx.lineTo(-this.radius, -this.height); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(this.radius, 0); ctx.lineTo(this.radius, -this.height); ctx.stroke();
+
+        // Top ellipse
+        ctx.fillStyle = '#3a3a3a';
+        ctx.beginPath();
+        ctx.ellipse(0, -this.height, this.radius, this.radius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+
+        // Cyberpunk/brutalist accents
+        ctx.fillStyle = '#ff3366';
+        ctx.fillRect(-10, -this.height * 0.7, 20, 4);
+        ctx.fillRect(-10, -this.height * 0.4, 20, 4);
+        
+        // HP bar
+        if(this.hp < this.maxHp) {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(-this.radius, -this.height - 15, this.radius*2, 4);
+            ctx.fillStyle = 'green';
+            ctx.fillRect(-this.radius, -this.height - 15, (this.radius*2) * (this.hp/this.maxHp), 4);
+        }
+        
+        ctx.restore();
+    }
+}
+
+class MonolithArchitect extends Enemy {
+    constructor(x, y) {
+        super(x, y);
+        this.radius = 25;
+        this.type = 'architect';
+        this.color = '#778899';
+        this.speed = 60 + this.level * 1.5;
+        this.maxHp = 250 * (1 + (this.level - 1) * 0.4);
+        this.hp = this.maxHp;
+        this.summonTimer = 3.0; // Quick initial cast
+        this.summonCooldown = 12.0;
+    }
+    update(dt) {
+        if(this.z > 0) {
+            this.z += this.vz * dt;
+            if(this.z <= 0) { this.z = 0; this.vz = 0; }
+            return false;
+        }
+        if (this.stunTimer > 0) {
+            this.stunTimer -= dt;
+            return false;
+        }
+        if (this.dead) return true;
+        
+        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
+        let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
+        
+        let targetDist = 400;
+        if (dist > targetDist + 50) {
+            this.vx = Math.cos(angle) * this.speed;
+            this.vy = Math.sin(angle) * this.speed;
+        } else if (dist < targetDist - 50) {
+            this.vx = -Math.cos(angle) * this.speed;
+            this.vy = -Math.sin(angle) * this.speed;
+        } else {
+            this.vx = Math.cos(angle + Math.PI/2) * this.speed * 0.5;
+            this.vy = Math.sin(angle + Math.PI/2) * this.speed * 0.5;
+        }
+        
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        this.summonTimer -= dt;
+        if (this.summonTimer <= 0) {
+            let baseAngle = Math.random() * Math.PI * 2;
+            let spawnRadius = 65; // traps player tightly, leaving a tiny squeeze window between monoliths
+            for (let i = 0; i < 3; i++) {
+                let a = baseAngle + (i * Math.PI * 2 / 3);
+                let mx = player.x + Math.cos(a) * spawnRadius;
+                let my = player.y + Math.sin(a) * spawnRadius;
+                entities.push(new BrutalistMonolith(mx, my, this.level));
+                createParticles(mx, my, 0, 30, '#555');
+            }
+            this.summonTimer = this.summonCooldown;
+        }
+        return false;
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let scale = getScale(this.z);
+        
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(scale, scale);
+        ctx.rotate(Math.atan2(this.vy, this.vx));
+        
+        // Heavy armor plating
+        ctx.fillStyle = '#445566';
+        ctx.strokeStyle = this.stunTimer > 0 ? '#ffff00' : this.color;
+        ctx.lineWidth = 2;
+        
+        ctx.beginPath();
+        ctx.rect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+        ctx.fill(); ctx.stroke();
+        
+        ctx.fillStyle = '#223344';
+        ctx.fillRect(-this.radius/2, -this.radius/2, this.radius, this.radius);
+        
+        // Eye
+        ctx.fillStyle = '#ffaa00';
+        ctx.beginPath(); ctx.arc(this.radius/2, 0, 4, 0, Math.PI*2); ctx.fill();
+        
+        ctx.restore();
     }
 }
 
@@ -833,20 +1150,23 @@ class Projectile {
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
         if(!p) return;
-        ctx.fillStyle = this.color;
         ctx.shadowBlur = 10;
         ctx.shadowColor = this.color;
         
         if (this.type === 'bullet' && (this.vx !== 0 || this.vy !== 0)) {
-            ctx.save();
-            ctx.translate(p.x, p.y);
-            ctx.rotate(Math.atan2(this.vy, this.vx));
             let s = getScale(this.z);
+            let angle = Math.atan2(this.vy, this.vx);
+            let length = 15 * s;
+            
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 4 * s;
+            ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.ellipse(0, 0, 8 * s, 2 * s, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+            ctx.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
+            ctx.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
+            ctx.stroke();
         } else {
+            ctx.fillStyle = this.color;
             ctx.beginPath(); ctx.arc(p.x, p.y, 3 * getScale(this.z), 0, Math.PI*2); ctx.fill();
         }
         ctx.shadowBlur = 0;
@@ -969,7 +1289,7 @@ class SpecialFuelDrop {
         if (distToPlayer < player.radius + this.radius) {
             player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + this.fuelAmount);
             createFloatingText(`+${Math.floor(this.fuelAmount)} Fuel`, this.x, this.y, '#ffff00', 1.5, true);
-            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
+            playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/impactMetal_004.ogg');
             updateUI();
             return true;
         }
@@ -1204,6 +1524,7 @@ class Boss extends Enemy {
     takeDamage(amount, source, color = '#fff') {
         if (super.takeDamage(amount, source, color)) {
             GAME.activeBoss = null;
+            GAME.bossDefeated = true;
             // Big loot explosion
             let totalXp = 500 * this.level;
             let numOrbs = 50;
@@ -1314,7 +1635,7 @@ class Singularity {
             ctx.fillStyle = '#9933ff';
             ctx.beginPath(); ctx.arc(p.x, p.y, 5*s, 0, Math.PI*2); ctx.fill();
         } else {
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillStyle = 'rgba(140, 9, 145, 0.89)';
             ctx.strokeStyle = '#9933ff';
             ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(p.x, p.y, (this.radius/3)*s, 0, Math.PI*2); ctx.fill(); ctx.stroke();
@@ -1337,40 +1658,47 @@ class WarpTrail {
         this.maxLife = 1.5;
         this.dx = x2 - x1;
         this.dy = y2 - y1;
-        this.len2 = this.dx * this.dx + this.dy * this.dy;
+        this.len = Math.hypot(this.dx, this.dy);
+        this.angle = Math.atan2(this.dy, this.dx);
         this.tickTimer = 0;
     }
     update(dt) {
         this.life -= dt;
         
         // Spawn lightning particles
-        if (this.len2 > 0) {
-            let spawnCount = Math.floor(Math.sqrt(this.len2) / 50); 
+        if (this.len > 0) {
+            let spawnCount = Math.floor(this.len / 50); 
             for (let i = 0; i < spawnCount; i++) {
                 if (Math.random() < dt * 15) {
                     let t = Math.random();
-                    let px = this.x1 + this.dx * t;
-                    let py = this.y1 + this.dy * t;
+                    let r = t * this.len;
+                    let a = this.angle + MathUtils.rand(-Math.PI / 12, Math.PI / 12);
+                    let px = this.x1 + Math.cos(a) * r;
+                    let py = this.y1 + Math.sin(a) * r;
                     let colors = ['#ff00ff', '#ff66ff', '#cc00ff'];
-                    let offsetX = MathUtils.rand(-this.width/2.5, this.width/2.5);
-                    let offsetY = MathUtils.rand(-this.width/2.5, this.width/2.5);
-                    particles.push(new Particle(px + offsetX, py + offsetY, 0, colors[MathUtils.randInt(0, 2)], MathUtils.rand(0.1, 0.3), 'lightning'));
+                    particles.push(new Particle(px, py, 0, colors[MathUtils.randInt(0, 2)], MathUtils.rand(0.1, 0.3), 'lightning'));
                 }
             }
         }
 
         this.tickTimer -= dt;
-        if (this.len2 > 0 && this.tickTimer <= 0) {
+        if (this.len > 0 && this.tickTimer <= 0) {
             this.tickTimer = 0.25; // apply 25% of DPS every 0.25s
+            let halfAngle = Math.PI / 12; // 15 degrees
             for (let i = entities.length - 1; i >= 0; i--) {
                 let e = entities[i];
                 if (e instanceof Enemy && !e.dead && e.z <= 0) {
-                    let t = Math.max(0, Math.min(1, ((e.x - this.x1)*this.dx + (e.y - this.y1)*this.dy) / this.len2));
-                    let projX = this.x1 + t * this.dx;
-                    let projY = this.y1 + t * this.dy;
-                    let dist = MathUtils.distance(e.x, e.y, projX, projY);
-                    if (dist < (this.width / 2) + e.radius) {
-                        e.takeDamage(getDamage(player) * this.mult * 0.25, player, this.color);
+                    let dist = MathUtils.distance(this.x1, this.y1, e.x, e.y);
+                    if (dist <= this.len + e.radius) {
+                        let eAngle = MathUtils.angle(this.x1, this.y1, e.x, e.y);
+                        let diff = eAngle - this.angle;
+                        while (diff < -Math.PI) diff += Math.PI * 2;
+                        while (diff > Math.PI) diff -= Math.PI * 2;
+                        diff = Math.abs(diff);
+
+                        if (diff <= halfAngle + (e.radius / Math.max(1, dist))) {
+                            e.takeDamage(getDamage(player) * this.mult * 0.25, player, this.color);
+                        }
                     }
                 }
             }
@@ -1502,6 +1830,62 @@ class XpOrb {
             ctx.lineWidth = 1;
             ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.stroke();
         }
+    }
+}
+
+class HpOrb {
+    constructor(x, y) {
+        this.x = x; this.y = y; this.z = 0;
+        this.radius = 6;
+        let ang = MathUtils.rand(0, Math.PI * 2);
+        let spd = MathUtils.rand(50, 100);
+        this.vx = Math.cos(ang) * spd;
+        this.vy = Math.sin(ang) * spd;
+        this.life = 0;
+        this.color = '#ff3366';
+    }
+    update(dt) {
+        this.life += dt;
+        let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
+        
+        // Magnetize to player
+        if (dist < 200) { 
+            let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
+            let pullSpeed = 500 - dist; 
+            this.vx = Math.cos(angle) * pullSpeed;
+            this.vy = Math.sin(angle) * pullSpeed;
+        } else {
+            this.vx *= 0.95; 
+            this.vy *= 0.95;
+        }
+        
+        this.x += this.vx * dt; 
+        this.y += this.vy * dt;
+
+        if (dist < player.radius + this.radius + 15) {
+            let healAmount = player.stats.maxHp * 0.10;
+            player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healAmount);
+            createFloatingText("+10% HP", this.x, this.y, '#00ff66', 1.5, true);
+            updateUI();
+            return true; // remove orb
+        }
+        return false;
+    }
+    draw(ctx) {
+        let p = project(this.x, this.y, this.z);
+        if(!p) return;
+        let s = getScale(this.z);
+        let pulse = 1 + 0.3 * Math.sin(this.life * 5);
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill();
+        
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(p.x - 1*s, p.y - 3*s, 2*s, 6*s);
+        ctx.fillRect(p.x - 3*s, p.y - 1*s, 6*s, 2*s);
+        
+        ctx.shadowBlur = 0;
     }
 }
 
@@ -1953,6 +2337,10 @@ function updateUI() {
         if (fuelCountEl) fuelCountEl.innerText = fuelCells.count;
     }
 
+    let currentSpeed = Math.floor(Math.hypot(player.vx, player.vy));
+    let speedEl = document.getElementById('speed-indicator');
+    if (speedEl) speedEl.innerText = `SPEED: ${currentSpeed} U/S`;
+
     renderStats();
 }
 
@@ -1964,6 +2352,9 @@ function renderInventory() {
         let div = document.createElement('div');
         div.className = 'inv-slot';
         if (item) {
+            if (item.upgraded || item.type === 'Upgrade Material') {
+                div.classList.add('holographic');
+            }
             let color = TIERS[item.tier].color;
             let iconInfo = getIcon(item.type, color);
             // Safely inject raw SVG instead of an image tag to prevent attribute breakout
@@ -2091,7 +2482,7 @@ function useItem(index) {
     if(!item) return;
 
     if (item.type === 'Fuel') {
-        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
+        playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/impactMetal_004.ogg');
         let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
@@ -2134,13 +2525,17 @@ function dropItem(index) {
         inventory[index] = null;
         let yieldItem;
         if (SLOT_TYPES.includes(item.type)) {
+            let yieldCount = 1;
+            if (item.upgraded && Math.random() < 0.20) {
+                yieldCount = 2;
+            }
             yieldItem = {
                 id: Math.random().toString(36).substr(2, 9),
                 name: `${TIERS[item.tier].name} Core`,
                 type: 'Upgrade Material',
                 tier: item.tier,
                 stackable: true,
-                count: 1,
+                count: yieldCount,
                 desc: `Combine 3 to upgrade a ${TIERS[item.tier].name} item.`
             };
         } else {
@@ -2221,8 +2616,7 @@ function showItemTooltip(item, e) {
     }
 
     if (item.perk) {
-        let perkLine = item.statLines.find(l => l.startsWith('[PERK]'));
-        if (!perkLine) perkLine = item.statLines.find(l => l.startsWith('[UPGRADED PERK]'));
+        let perkLine = item.statLines.find(l => l.includes('[PERK]') || l.includes('[UPGRADED PERK]'));
         if(perkLine) statsHtml.push(`<span style="color:${item.upgradedPerk ? '#ff00ff' : '#f82'}">${perkLine}</span>`);
     } else if (item.statLines && !item.stats) {
         statsHtml.push(...item.statLines);
@@ -2237,8 +2631,7 @@ function showItemTooltip(item, e) {
         document.getElementById('tt-eq-desc').innerHTML = eqItem.desc;
         let eqStatsHtml = eqItem.statLines ? [...eqItem.statLines] : [];
         if(eqItem.perk) {
-            let pIdx = eqStatsHtml.findIndex(l => l.startsWith('[PERK]'));
-            if(pIdx === -1) pIdx = eqStatsHtml.findIndex(l => l.startsWith('[UPGRADED PERK]'));
+            let pIdx = eqStatsHtml.findIndex(l => l.includes('[PERK]') || l.includes('[UPGRADED PERK]'));
             if(pIdx !== -1) eqStatsHtml[pIdx] = `<span style="color:${eqItem.upgradedPerk ? '#ff00ff' : '#f82'}">${eqStatsHtml[pIdx]}</span>`;
         }
         document.getElementById('tt-eq-stats').innerHTML = eqStatsHtml.join('<br>');
@@ -2267,7 +2660,7 @@ function showSkillTooltip(id, e) {
     let descs = [
         pbDesc,
         `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmgEmpStr}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
-        `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgWarpStr}</span> damage per second.<br>Width: 170 units`,
+        `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgWarpStr}</span> damage per second.<br>Cone: 30 degrees`,
         `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmgSingExpStr}</span> damage.`
     ];
     showTooltip(skill.name, descs[id-1], `Cost: ${skill.cost} ${skill.isFuel ? 'Fuel' : 'Energy'}<br>Cooldown: ${skill.maxCd.toFixed(2)}s`, e);
@@ -2295,7 +2688,7 @@ function toggleInventory() {
 }
 
 function die() {
-    playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/explosionCrunch_003.ogg');
+    playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/explosionCrunch_003.ogg');
     GAME.state = 'DEAD';
     document.getElementById('game-over').style.display = 'flex';
 }
@@ -2334,20 +2727,20 @@ function useSkill(index) {
         let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
         
         if (isTripleUpgraded) {
-            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserLarge_001.ogg');
+            playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/laserLarge_001.ogg');
             projectiles.push(new WhipBeam(player.x, player.y, angle, getDamage(player), varColor('--accent'), player));
         } else if (hasTriple) {
-            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserLarge_001.ogg');
+            playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/laserLarge_001.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
-            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/laserSmall_004.ogg');
+            playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/laserSmall_004.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
     else if(index === 1) { // EMP
-        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/spaceEngine_002.ogg');
+        playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/spaceEngine_002.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
@@ -2358,17 +2751,18 @@ function useSkill(index) {
         }
     }
     else if(index === 2) { // Warp Dash
-        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/doorOpen_002.ogg');
+        playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/doorOpen_002.ogg');
         // Reduced 40% (500 -> 300)
         let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
         let oldX = player.x, oldY = player.y;
         player.x += Math.cos(angle) * dist;
         player.y += Math.sin(angle) * dist;
+        player.timers.immunity = 1.0;
         
-        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, getDamage(player), varColor('--energy')));
+        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, 0.75, varColor('--energy')));
     }
     else if(index === 3) { // Singularity
-        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/engineCircular_000.ogg');
+        playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/engineCircular_000.ogg');
         player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
         entities.push(player.activeSingularity);
     }
@@ -2403,9 +2797,23 @@ function update(dt) {
     player.vx *= player.stats.friction;
     player.vy *= player.stats.friction;
     
+    let currentMaxSpeed = player.stats.maxSpeed;
+    if(player.timers.mycelialDebuff > 0) {
+        player.timers.mycelialDebuff -= dt;
+        currentMaxSpeed *= 0.7; // 30% Slow
+        
+        // Drain 10% energy over 2 seconds => 5% per second
+        player.stats.energy -= (player.stats.maxEnergy * 0.05) * dt;
+        if(player.stats.energy < 0) player.stats.energy = 0;
+        
+        if(Math.random() < dt * 10) {
+            createParticles(player.x + MathUtils.rand(-15, 15), player.y + MathUtils.rand(-15, 15), 0, 1, '#99ff33', 0.5);
+        }
+    }
+    
     let speed = Math.hypot(player.vx, player.vy);
-    if(speed > player.stats.maxSpeed) {
-        let ratio = player.stats.maxSpeed / speed;
+    if(speed > currentMaxSpeed) {
+        let ratio = currentMaxSpeed / speed;
         player.vx *= ratio; player.vy *= ratio;
     }
 
@@ -2416,10 +2824,12 @@ function update(dt) {
             player.vx += Math.cos(moveAngle) * 800;
             player.vy += Math.sin(moveAngle) * 800;
             player.timers.dodge = 2.0; // cooldown
+            player.timers.immunity = 1.0;
             createParticles(player.x, player.y, 0, 20, varColor('--accent'));
         }
     }
     if(player.timers.dodge > 0) player.timers.dodge -= dt;
+    if(player.timers.immunity > 0) player.timers.immunity -= dt;
 
     // Apply movement
     if(player.stats.fuel > 0 || speed < 50) {
@@ -2438,8 +2848,18 @@ function update(dt) {
     player.angle = MathUtils.angle(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
 
     // Camera follow
-    GAME.camera.x = MathUtils.lerp(GAME.camera.x, player.x, dt * 5);
-    GAME.camera.y = MathUtils.lerp(GAME.camera.y, player.y, dt * 5);
+    let targetX = player.x;
+    let targetY = player.y;
+    let dx = targetX - GAME.camera.x;
+    let dy = targetY - GAME.camera.y;
+    let dist = Math.hypot(dx, dy);
+    let maxSpeed = 1500; // max camera speed per second
+    let moveDist = dist * (1 - Math.exp(-5 * dt)); // spring damper
+    if (moveDist > maxSpeed * dt) moveDist = maxSpeed * dt;
+    if (dist > 0) {
+        GAME.camera.x += (dx / dist) * moveDist;
+        GAME.camera.y += (dy / dist) * moveDist;
+    }
 
     // Mouse World coords
     let scale = getScale(0);
@@ -2484,7 +2904,7 @@ function update(dt) {
     } else {
         player.timers.shieldRegen -= dt;
         if(player.timers.shieldRegen <= 0 && player.stats.shields < player.stats.maxShields) {
-            playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/forceField_002.ogg');
+            playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/forceField_002.ogg');
         }
     }
 
@@ -2509,6 +2929,9 @@ function update(dt) {
     for(let i=xpOrbs.length-1; i>=0; i--) {
         if(xpOrbs[i].update(dt)) xpOrbs.splice(i, 1);
     }
+    for(let i=hpOrbs.length-1; i>=0; i--) {
+        if(hpOrbs[i].update(dt)) hpOrbs.splice(i, 1);
+    }
     for(let i=particles.length-1; i>=0; i--) {
         if(particles[i].update(dt)) particles.splice(i, 1);
     }
@@ -2527,7 +2950,16 @@ function update(dt) {
 if (!GAME.activeBoss && Math.random() < dt * 0.5) {
     let angle = Math.random() * Math.PI * 2;
     let dist = MathUtils.rand(800, 1200);
-    entities.push(new Enemy(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+    if (GAME.bossDefeated && Math.random() < 0.20) {
+        let r = Math.random();
+        if (r < 0.5) {
+            entities.push(new MycelialSpreader(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+        } else {
+            entities.push(new MonolithArchitect(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+        }
+    } else {
+        entities.push(new Enemy(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+    }
 }
 
 // Map chunk discovery for minimap
@@ -2572,7 +3004,7 @@ function draw() {
 
     // Draw order: Z-sorting
     let allRenderables = [
-        ...entities, ...drops, ...xpOrbs, ...particles, ...projectiles, ...shockwaves, ...warpTrails,
+        ...entities, ...drops, ...xpOrbs, ...hpOrbs, ...particles, ...projectiles, ...shockwaves, ...warpTrails,
         { isPlayer: true, x: player.x, y: player.y, z: 0 }
     ].sort((a, b) => b.z - a.z); // draw deep space first
 
@@ -2604,20 +3036,36 @@ function draw() {
                 ctx.strokeStyle = 'rgba(255, 0, 85, 0.05)';
                 ctx.beginPath(); ctx.arc(0,0,360,0,Math.PI*2); ctx.stroke();
 
+                // Dash Cooldown Indicator
+                if(player.timers.dodge > 0) {
+                    let dodgeProgress = player.timers.dodge / 2.0;
+                    ctx.strokeStyle = `rgba(255, 255, 255, 0.5)`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.arc(0,0,32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * dodgeProgress); ctx.stroke();
+                }
+
                 ctx.rotate(player.angle);
                 
+                if (player.timers.immunity > 0) {
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#fff';
+                }
+
                 // Ship Body
                 ctx.fillStyle = '#111';
-                ctx.strokeStyle = varColor('--accent');
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = player.timers.immunity > 0 ? '#fff' : varColor('--accent');
+                ctx.lineWidth = player.timers.immunity > 0 ? 3 : 2;
                 ctx.beginPath();
                 ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-10, 0); ctx.lineTo(-15, -15);
                 ctx.closePath();
                 ctx.fill(); ctx.stroke();
                 
+                ctx.shadowBlur = 0;
+
                 // Shields
                 if(player.stats.shields > 0) {
                     ctx.strokeStyle = `rgba(51, 204, 255, ${0.2 + (player.stats.shields/player.stats.maxShields)*0.5})`;
+                    ctx.lineWidth = 2;
                     ctx.beginPath(); ctx.arc(0,0,25,0,Math.PI*2); ctx.stroke();
                 }
                 ctx.restore();
@@ -2748,7 +3196,7 @@ window.addEventListener('wheel', e => {
 function useFuelCell() {
     let idx = inventory.findIndex(i => i && i.type === 'Fuel');
     if (idx !== -1) {
-        playSound('https://github.com/diploidian/void_drifter/blob/main/sounds/impactMetal_004.ogg');
+        playSound('https://raw.githubusercontent.com/diploidian/void_drifter/main/sounds/impactMetal_004.ogg');
         let item = inventory[idx];
         let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
