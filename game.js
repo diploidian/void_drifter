@@ -368,7 +368,7 @@ const player = {
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
-        this.skills[0].cost = 2 + Math.floor(this.stats.maxEnergy * 0.05); // Fractional cost based on max energy
+        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.02); // Fractional cost based on max energy
         this.skills[1].cost = Math.floor(this.stats.maxEnergy * 0.20);
         this.skills[3].cost = Math.floor(this.stats.maxEnergy * 0.40);
         // 100 fire rate = 0.25s.
