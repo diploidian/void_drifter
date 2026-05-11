@@ -370,7 +370,7 @@ const player = {
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
-        this.skills[0].cost = 2 + Math.floor(this.stats.maxEnergy * 0.03);
+        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.025); //pulse blaster base cost.
         this.skills[1].cost = Math.floor(this.stats.maxEnergy * 0.20);
         this.skills[3].cost = Math.floor(this.stats.maxEnergy * 0.40);
         // Base 0.3s cooldown, reduced by the fire rate bonus percentage
