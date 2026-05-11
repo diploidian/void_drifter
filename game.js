@@ -370,7 +370,7 @@ const player = {
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
-        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.05);
+        this.skills[0].cost = 2 + Math.floor(this.stats.maxEnergy * 0.03);
         this.skills[1].cost = Math.floor(this.stats.maxEnergy * 0.20);
         this.skills[3].cost = Math.floor(this.stats.maxEnergy * 0.40);
         // Base 0.3s cooldown, reduced by the fire rate bonus percentage
@@ -3067,11 +3067,11 @@ function draw() {
     // Draw order: Z-sorting
     let allRenderables = [
         ...entities, ...drops, ...xpOrbs, ...hpOrbs, ...particles, ...projectiles, ...shockwaves, ...warpTrails,
-        { isPlayer: true, x: player.x, y: player.y, z: 0 }
+        { isPlayerShip: true, x: player.x, y: player.y, z: 0 }
     ].sort((a, b) => b.z - a.z); // draw deep space first
 
     for(let obj of allRenderables) {
-        if(obj.isPlayer) {
+        if(obj.isPlayerShip) {
             let p = project(player.x, player.y, 0);
             if(p) {
                 let s = getScale(0);
