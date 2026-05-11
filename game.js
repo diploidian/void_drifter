@@ -214,7 +214,7 @@ function generateLoot(type = null, tierLevel = -1) {
         else if (stat === 'armorRating') { val = Math.floor(MathUtils.rand(20, 30) * Math.pow(tier.mult, 2) * lvlMult); str = `+${val} Armor Rating`; }
         else if (stat === 'maxShields') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult); str = `+${val} Max Shields`; }
         else if (stat === 'shieldRegen') { val = Math.floor(MathUtils.rand(2, 8) * tier.mult * lvlMult); str = `+${val} Shield/sec`; }
-        else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(50, 150) * tier.mult * lvlMult); str = `+${val} Max Speed`; }
+        else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(5, 12) * tier.mult); str = `+${val} Max Speed`; }
         else if (stat === 'acceleration') { val = Math.floor(MathUtils.rand(10, 30) * tier.mult * lvlMult); str = `+${val} Thrust`; }
         else if (stat === 'maxEnergy') { val = Math.floor(MathUtils.rand(20, 60) * tier.mult * lvlMult); str = `+${val} Max Energy`; }
         else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
@@ -267,7 +267,7 @@ const BASE_STATS = {
     maxShields: 50, shields: 50, shieldRegen: 5,
     maxEnergy: 100, energy: 100, energyRegen: 10,
     maxFuel: 100, fuel: 100,
-    maxSpeed: 300, acceleration: 400, friction: 0.95,
+    maxSpeed: 200, acceleration: 600, friction: 0.95,
     damage: { min: 9, max: 13 }, fireRate: 100, critChance: 5, critRating: 0
 };
 
@@ -283,9 +283,9 @@ const player = {
     xpNext: 100,
     stats: { ...BASE_STATS },
     statBreakdown: {},
-    timers: { dodge: 0, shieldRegen: 0, repairis: 0, immunity: 0, mycelialDebuff: 0 },
+    timers: { dodge: 0, shieldRegen: 0, repairis: 0, immunity: 0, mycelialDebuff: 0, dashActive: 0 },
     skills: [
-        { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.2, type: 'projectile' },
+        { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.3, type: 'projectile' },
         { id: 2, name: 'EMP Blast', cost: 20, cd: 0, maxCd: 5.0, type: 'aoe' },
         { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 3.0, type: 'dash', isFuel: true },
         { id: 4, name: 'Singularity Torpedo', cost: 40, cd: 0, maxCd: 10.0, type: 'special' }
@@ -370,11 +370,11 @@ const player = {
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
-        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.02); // Fractional cost based on max energy
+        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.05);
         this.skills[1].cost = Math.floor(this.stats.maxEnergy * 0.20);
         this.skills[3].cost = Math.floor(this.stats.maxEnergy * 0.40);
-        // 100 fire rate = 0.25s.
-        this.skills[0].maxCd = 0.25 / (this.stats.fireRate / 100);
+        // Base 0.3s cooldown, reduced by the fire rate bonus percentage
+        this.skills[0].maxCd = 0.3 * (1 - fireRateBonus);
         
         updateUI();
     },
@@ -1190,11 +1190,15 @@ class Projectile {
             let length = 15 * s;
             
             ctx.strokeStyle = this.color;
-            ctx.lineWidth = 4 * s;
+            ctx.lineWidth = 6 * s;
             ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
             ctx.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
+            ctx.stroke();
+            
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2 * s;
             ctx.stroke();
         } else {
             ctx.fillStyle = this.color;
@@ -1666,7 +1670,7 @@ class Singularity {
             ctx.fillStyle = '#9933ff';
             ctx.beginPath(); ctx.arc(p.x, p.y, 5*s, 0, Math.PI*2); ctx.fill();
         } else {
-            ctx.fillStyle = 'rgba(140, 9, 145, 0.89)';
+            ctx.fillStyle = '#9933ff';
             ctx.strokeStyle = '#9933ff';
             ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(p.x, p.y, (this.radius/3)*s, 0, Math.PI*2); ctx.fill(); ctx.stroke();
@@ -1965,7 +1969,13 @@ class Particle {
             }
             ctx.stroke();
         } else {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 2*s, 0, Math.PI*2); ctx.fill();
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(Math.atan2(this.vy, this.vx));
+            ctx.beginPath(); 
+            ctx.ellipse(0, 0, 4 * s, 1.5 * s, 0, 0, Math.PI * 2); 
+            ctx.fill();
+            ctx.restore();
         }
         
         ctx.globalAlpha = 1.0;
@@ -2261,6 +2271,7 @@ function openUpgradeModal(targetItem, srcInfo, tgtType, tgtId) {
     }
     modal.style.display = 'block';
     GAME.state = 'INVENTORY';
+    document.body.classList.add('inv-open');
 }
 
 function closeUpgradeModal() {
@@ -2710,10 +2721,12 @@ function toggleInventory() {
     if(GAME.state === 'PLAYING') {
         GAME.state = 'INVENTORY';
         el.style.display = 'flex';
+        document.body.classList.add('inv-open');
         updateUI();
     } else if (GAME.state === 'INVENTORY') {
         GAME.state = 'PLAYING';
         el.style.display = 'none';
+        document.body.classList.remove('inv-open');
         hideTooltip();
     }
 }
@@ -2721,6 +2734,8 @@ function toggleInventory() {
 function die() {
     playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/explosionCrunch_003.ogg');
     GAME.state = 'DEAD';
+    document.getElementById('char-sheet').style.display = 'none';
+    document.body.classList.remove('inv-open');
     document.getElementById('game-over').style.display = 'flex';
 }
 
@@ -2818,10 +2833,19 @@ function update(dt) {
 
     // --- Player Movement & Physics ---
     let ax = 0, ay = 0;
-    if(GAME.keys.w) ay -= player.stats.acceleration;
-    if(GAME.keys.s) ay += player.stats.acceleration;
-    if(GAME.keys.a) ax -= player.stats.acceleration;
-    if(GAME.keys.d) ax += player.stats.acceleration;
+    if(GAME.keys.w) ay -= 1;
+    if(GAME.keys.s) ay += 1;
+    if(GAME.keys.a) ax -= 1;
+    if(GAME.keys.d) ax += 1;
+
+    if (ax !== 0 && ay !== 0) {
+        let len = Math.hypot(ax, ay);
+        ax /= len;
+        ay /= len;
+    }
+
+    ax *= player.stats.acceleration;
+    ay *= player.stats.acceleration;
 
     player.vx += ax * dt;
     player.vy += ay * dt;
@@ -2829,6 +2853,10 @@ function update(dt) {
     player.vy *= player.stats.friction;
     
     let currentMaxSpeed = player.stats.maxSpeed;
+    if (player.timers.dashActive > 0) {
+        currentMaxSpeed *= 2;
+    }
+
     if(player.timers.mycelialDebuff > 0) {
         player.timers.mycelialDebuff -= dt;
         currentMaxSpeed *= 0.7; // 30% Slow
@@ -2852,15 +2880,18 @@ function update(dt) {
     if(GAME.keys[' '] && player.timers.dodge <= 0) {
         if(ax !== 0 || ay !== 0) {
             let moveAngle = Math.atan2(ay, ax);
-            player.vx += Math.cos(moveAngle) * 800;
-            player.vy += Math.sin(moveAngle) * 800;
+            player.timers.dashActive = 0.4;
             player.timers.dodge = 2.0; // cooldown
             player.timers.immunity = 1.0;
+            
+            player.vx = Math.cos(moveAngle) * (player.stats.maxSpeed * 2);
+            player.vy = Math.sin(moveAngle) * (player.stats.maxSpeed * 2);
             createParticles(player.x, player.y, 0, 20, varColor('--accent'));
         }
     }
     if(player.timers.dodge > 0) player.timers.dodge -= dt;
     if(player.timers.immunity > 0) player.timers.immunity -= dt;
+    if(player.timers.dashActive > 0) player.timers.dashActive -= dt;
 
     // Apply movement
     if(player.stats.fuel > 0 || speed < 50) {

@@ -12,9 +12,19 @@
             --text: #e0e0e0;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-        body { background-color: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; overflow: hidden; }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; cursor: crosshair; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; overflow: hidden; cursor: crosshair; }
         
+        body.inv-open {
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="%2300d2ff" stroke="white" stroke-width="1"><path d="M16 2 L4 26 L16 20 L28 26 Z"/></svg>') 16 2, auto;
+        }
+        body.inv-open * {
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="%2300d2ff" stroke="white" stroke-width="1"><path d="M16 2 L4 26 L16 20 L28 26 Z"/></svg>') 16 2, auto;
+        }
+        body.inv-open .slot, body.inv-open .inv-slot, body.inv-open button, body.inv-open .hud-eq-slot, body.inv-open .skill-slot, body.inv-open .slot *, body.inv-open .inv-slot *, body.inv-open button *, body.inv-open .hud-eq-slot *, body.inv-open .skill-slot * {
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="%23ff3366" stroke="white" stroke-width="1"><path d="M16 2 L4 26 L16 20 L28 26 Z"/></svg>') 16 2, pointer !important;
+        }
+
         canvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
 
         /* UI Layer */
@@ -110,7 +120,7 @@
 
         /* Upgrades & Holographic Effect */
         .holographic {
-            background: linear-gradient(45deg, rgba(0, 210, 255, 0.4), rgba(153, 51, 255, 0.4), rgba(255, 0, 128, 0.4), rgba(0, 210, 255, 0.4));
+            background: linear-gradient(45deg, rgba(0, 210, 255, 0.3), rgba(153, 51, 255, 0.3), rgba(255, 0, 128, 0.3), rgba(0, 210, 255, 0.3));
             background-size: 300% 300%;
             animation: holoFlow 2s infinite linear;
             border-color: var(--accent) !important;
