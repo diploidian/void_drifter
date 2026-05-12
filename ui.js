@@ -530,11 +530,13 @@ function toggleInventory() {
         GAME.state = 'INVENTORY';
         el.style.display = 'flex';
         document.body.classList.add('inv-open');
+        if (typeof devGUI !== 'undefined') devGUI.show();
         updateUI();
     } else if (GAME.state === 'INVENTORY') {
         GAME.state = 'PLAYING';
         el.style.display = 'none';
         document.body.classList.remove('inv-open');
+        if (typeof devGUI !== 'undefined') devGUI.hide();
         hideTooltip();
     }
 }

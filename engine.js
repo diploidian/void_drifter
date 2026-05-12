@@ -85,8 +85,10 @@ function useSkill(index) {
         let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
         
         if (isTripleUpgraded) {
-            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/laserLarge_001.ogg');
-            projectiles.push(new WhipBeam(player.x, player.y, angle, getDamage(player), varColor('--accent'), player));
+            if (!player.activeWhipBeam) {
+                playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/laserLarge_001.ogg');
+                player.activeWhipBeam = new WhipBeam(player, getDamage(player), varColor('--accent'));
+            }
         } else if (hasTriple) {
             playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/laserLarge_001.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
@@ -248,7 +250,17 @@ function update(dt) {
     GAME.mouse.worldY = (GAME.mouse.y - ch/2) / scale + GAME.camera.y;
 
     // Auto attacks (Left Click)
-    if(GAME.mouse.left) useSkill(0);
+    if(GAME.mouse.left) {
+        useSkill(0);
+        if (player.activeWhipBeam) {
+            if (player.activeWhipBeam.update(dt, GAME.mouse.worldX, GAME.mouse.worldY)) {
+                player.activeWhipBeam = null;
+            }
+        }
+    } else if (player.activeWhipBeam) {
+        player.activeWhipBeam.dead = true;
+        player.activeWhipBeam = null;
+    }
     
     // Active Skills
     if(GAME.keys['1']) useSkill(0);
@@ -346,6 +358,7 @@ function update(dt) {
     let progress = MathUtils.clamp((totalXP - startXP) / Math.max(1, targetXP - startXP), 0, 1.5);
     let spawnRate = 0.5 + 0.5 * Math.pow(progress, 2); // Exponential curve
 
+    if (typeof devSettings !== 'undefined') spawnRate *= devSettings.spawnRateMult;
     if (!GAME.activeBoss && Math.random() < dt * spawnRate) {
     let angle = Math.random() * Math.PI * 2;
     let dist = MathUtils.rand(800, 1200);
@@ -412,6 +425,7 @@ function draw() {
     for(let i=0; i<projectiles.length; i++) RENDER_LIST.push(projectiles[i]);
     for(let i=0; i<shockwaves.length; i++) RENDER_LIST.push(shockwaves[i]);
     for(let i=0; i<warpTrails.length; i++) RENDER_LIST.push(warpTrails[i]);
+    if (player.activeWhipBeam) RENDER_LIST.push(player.activeWhipBeam);
     RENDER_LIST.push({ isPlayerShip: true, x: player.x, y: player.y, z: 0 });
     
     RENDER_LIST.sort((a, b) => b.z - a.z); // draw deep space first

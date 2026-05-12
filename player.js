@@ -29,6 +29,7 @@ const player = {
     angle: 0,
     damageIntensity: 0, // Used for screen red glow
     activeSingularity: null,
+    activeWhipBeam: null,
     level: 1,
     xp: 0,
     xpNext: 100,

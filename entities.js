@@ -790,86 +790,156 @@ class Projectile {
 }
 
 class WhipBeam {
-    constructor(x, y, angle, damage, color, source) {
-        this.x = x; this.y = y; this.z = 0;
-        this.angle = angle;
+    constructor(source, damage, color) {
+        this.source = source;
         this.damage = damage;
         this.color = color;
-        this.source = source;
-        this.life = 0.2;
-        this.maxLife = 0.2;
+        this.z = -1; // Render on top of player
         this.chainDamageMult = 0.5;
+        this.dead = false;
 
-        let maxDist = 1200;
-        let endX = this.x + Math.cos(this.angle) * maxDist;
-        let endY = this.y + Math.sin(this.angle) * maxDist;
+        this.numNodes = 25;
+        this.nodes = [];
+        for (let i = 0; i < this.numNodes; i++) {
+            this.nodes.push({ x: source.x, y: source.y, vx: 0, vy: 0 });
+        }
 
-        let target = null;
-        let closestSnapDist = Infinity;
-        let snappedTargetDist = Infinity;
+        this.tickTimer = 0.25;
+        this.snappedEnemies = new Set();
+        this.mainTarget = null;
 
+        this.pulseCount = 0;
+        this.maxPulsesNoTarget = 2; // Pulsing empty space times out weapon
+    }
+
+    update(dt, targetX, targetY) {
+        if (this.dead) return true;
+
+        this.snappedEnemies.clear();
+        this.mainTarget = null;
+
+        // Find main target directly at cursor
         for (let e of entities) {
             if (e instanceof Enemy && !e.dead && e.z <= 0) {
-                let eDist = MathUtils.distance(this.x, this.y, e.x, e.y);
-                if (eDist <= maxDist) {
-                    let num = Math.abs((endX - this.x)*(this.y - e.y) - (this.x - e.x)*(endY - this.y));
-                    let snapDist = num / maxDist;
-                    if (snapDist < 60) {
-                        if (eDist < snappedTargetDist) {
-                            snappedTargetDist = eDist;
-                            closestSnapDist = snapDist;
-                            target = e;
+                if (MathUtils.distance(targetX, targetY, e.x, e.y) <= 20 + e.radius) {
+                    this.mainTarget = e;
+                    break;
+                }
+            }
+        }
+
+        let tipX = targetX;
+        let tipY = targetY;
+        if (this.mainTarget) {
+            tipX = this.mainTarget.x;
+            tipY = this.mainTarget.y;
+            this.snappedEnemies.add(this.mainTarget);
+        }
+
+        // Base is locked to source
+        this.nodes[0].x = this.source.x;
+        this.nodes[0].y = this.source.y;
+        this.nodes[0].vx = 0;
+        this.nodes[0].vy = 0;
+
+        let stiffness = 600;
+        let friction = 0.70;
+
+        for (let i = 1; i < this.numNodes; i++) {
+            let t = i / (this.numNodes - 1);
+            let idealX = MathUtils.lerp(this.source.x, tipX, t);
+            let idealY = MathUtils.lerp(this.source.y, tipY, t);
+
+            if (i < this.numNodes - 1) { // Intermediate magnetic path snapping
+                for (let e of entities) {
+                    if (e instanceof Enemy && !e.dead && e.z <= 0) {
+                        if (MathUtils.distance(idealX, idealY, e.x, e.y) <= 20 + e.radius) {
+                            idealX = e.x;
+                            idealY = e.y;
+                            this.snappedEnemies.add(e);
+                            break;
                         }
                     }
                 }
             }
+
+            let node = this.nodes[i];
+            let forceX = (idealX - node.x) * stiffness;
+            let forceY = (idealY - node.y) * stiffness;
+
+            node.vx += forceX * dt;
+            node.vy += forceY * dt;
+            node.vx *= friction;
+            node.vy *= friction;
+
+            node.x += node.vx * dt;
+            node.y += node.vy * dt;
         }
 
-        if (target) {
-            this.targetX = target.x; this.targetY = target.y;
-            target.takeDamage(this.damage, this.source, this.color);
-            shockwaves.push(new Shockwave(target.x, target.y, target.z, this.color, 40));
-        } else {
-            this.targetX = endX; this.targetY = endY;
-        }
+        // Tip exactly snaps to target location
+        this.nodes[this.numNodes - 1].x = tipX;
+        this.nodes[this.numNodes - 1].y = tipY;
 
-        let len = MathUtils.distance(this.x, this.y, this.targetX, this.targetY);
-        for (let e of entities) {
-            if (e instanceof Enemy && !e.dead && e !== target && e.z <= 0) {
-                let eDist = MathUtils.distance(this.x, this.y, e.x, e.y);
-                if (eDist <= len) {
-                    let num = Math.abs((this.targetX - this.x)*(this.y - e.y) - (this.x - e.x)*(this.targetY - this.y));
-                    let dLine = num / len;
-                    if (dLine < e.radius + 15) e.takeDamage(this.damage * this.chainDamageMult, this.source, this.color);
+        // Tick Damage & Timeout Logic
+        this.tickTimer -= dt;
+        if (this.tickTimer <= 0) {
+            this.tickTimer = 0.25;
+            
+            if (!this.mainTarget) {
+                this.pulseCount++;
+                if (this.pulseCount >= this.maxPulsesNoTarget) {
+                    this.dead = true;
+                    return true;
+                }
+            } else {
+                this.pulseCount = 0; // Reset pulses if target acquired
+            }
+
+            for (let e of this.snappedEnemies) {
+                if (e === this.mainTarget) {
+                    e.takeDamage(this.damage, this.source, this.color);
+                    shockwaves.push(new Shockwave(e.x, e.y, e.z, this.color, 40));
+                } else {
+                    e.takeDamage(this.damage * this.chainDamageMult, this.source, this.color);
                 }
             }
         }
-
-        this.points = [{x: this.x, y: this.y}];
-        let segments = 8;
-        for(let i=1; i<segments; i++) {
-            let t = i/segments;
-            this.points.push({
-                x: MathUtils.lerp(this.x, this.targetX, t) + MathUtils.rand(-20, 20),
-                y: MathUtils.lerp(this.y, this.targetY, t) + MathUtils.rand(-20, 20)
-            });
-        }
-        this.points.push({x: this.targetX, y: this.targetY});
+        return false;
     }
-    update(dt) { this.life -= dt; return this.life <= 0; }
+
     draw(ctx) {
+        if (this.dead) return;
         ctx.strokeStyle = this.color;
         ctx.shadowBlur = 15;
         ctx.shadowColor = this.color;
-        ctx.lineWidth = 4 * (this.life / this.maxLife);
+        
+        // Visual pulsing width
+        let widthMult = 1 + 0.5 * Math.sin(Date.now() / 50);
+        ctx.lineWidth = 4 * widthMult * getScale(this.z);
+        
         ctx.beginPath();
-        for(let i=0; i<this.points.length; i++) {
-            let p = project(this.points[i].x, this.points[i].y, 0);
-            if(p) {
-                if (i === 0) ctx.moveTo(p.x, p.y);
-                else ctx.lineTo(p.x, p.y);
+        let p0 = project(this.nodes[0].x, this.nodes[0].y, this.z);
+        if (!p0) {
+            ctx.shadowBlur = 0;
+            return; 
+        }
+        ctx.moveTo(p0.x, p0.y);
+
+        // Quad curve through midpoints
+        for (let i = 1; i < this.numNodes - 1; i++) {
+            let pCurr = project(this.nodes[i].x, this.nodes[i].y, this.z);
+            let pNext = project(this.nodes[i+1].x, this.nodes[i+1].y, this.z);
+            if (pCurr && pNext) {
+                let mx = (pCurr.x + pNext.x) / 2;
+                let my = (pCurr.y + pNext.y) / 2;
+                ctx.quadraticCurveTo(pCurr.x, pCurr.y, mx, my);
             }
         }
+        let pLast = project(this.nodes[this.numNodes-1].x, this.nodes[this.numNodes-1].y, this.z);
+        if (pLast) {
+            ctx.lineTo(pLast.x, pLast.y);
+        }
+
         ctx.stroke();
         ctx.shadowBlur = 0;
     }
@@ -1071,7 +1141,7 @@ class Boss extends Enemy {
         this.type = 'boss';
         this.abilities = [
             { name: 'charge', cd: 0, maxCd: 8.0, active: false, duration: 0 },
-            { name: 'barrage', cd: 3, maxCd: 10.0 },
+            { name: 'barrage', cd: 3, maxCd: 10.0, active: false, shotsFired: 0, shotTimer: 0, currentAngle: 0 },
             { name: 'missile', cd: 6, maxCd: 15.0 }
         ];
     }
@@ -1108,10 +1178,22 @@ class Boss extends Enemy {
         }
 
         let barrage = this.abilities[1];
-        if (barrage.cd <= 0) {
-            for(let i=-3; i<=3; i++) {
-                projectiles.push(new Projectile(this.x, this.y, angle + i * (Math.PI/16), 600, getDamage(this) * this.barrageDamageMult, false, '#ff8800', this));
+        if (barrage.active) {
+            barrage.shotTimer -= dt;
+            if (barrage.shotTimer <= 0) {
+                for(let i=-1; i<=1; i++) {
+                    projectiles.push(new Projectile(this.x, this.y, barrage.currentAngle + i * (Math.PI/16), 600, getDamage(this) * this.barrageDamageMult, false, '#ff8800', this));
+                }
+                barrage.currentAngle += Math.PI / 10;
+                barrage.shotsFired++;
+                barrage.shotTimer = 0.15;
+                if (barrage.shotsFired >= 12) barrage.active = false;
             }
+        } else if (barrage.cd <= 0) {
+            barrage.active = true;
+            barrage.shotsFired = 0;
+            barrage.shotTimer = 0;
+            barrage.currentAngle = angle;
             barrage.cd = barrage.maxCd;
         }
 
