@@ -1,0 +1,123 @@
+/** ==========================================
+ * CORE MATH & UTILITIES
+ * ========================================== */
+const MathUtils = {
+    rand: (min, max) => Math.random() * (max - min) + min,
+    randInt: (min, max) => Math.floor(Math.random() * (max - min + 1)) + min,
+    distance: (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1),
+    angle: (x1, y1, x2, y2) => Math.atan2(y2 - y1, x2 - x1),
+    lerp: (a, b, t) => a + (b - a) * t,
+    clamp: (val, min, max) => Math.max(min, Math.min(max, val)),
+    distToSegment: (px, py, x1, y1, x2, y2) => {
+        let l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+        if (l2 === 0) return Math.hypot(px - x1, py - y1);
+        let t = Math.max(0, Math.min(1, ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2));
+        return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+    }
+};
+
+function getDamage(source) {
+    let dmg = source.stats ? source.stats.damage : source.damage;
+    if (typeof dmg === 'object') {
+        return MathUtils.rand(dmg.min, dmg.max);
+    }
+    return dmg;
+}
+
+function calculateCrit(amount, source) {
+    let isCrit = false;
+    if (source && source.stats && source.stats.critChance) {
+        if (Math.random() * 100 < source.stats.critChance) {
+            isCrit = true;
+            amount *= 1.5;
+        }
+    }
+    return { amount, isCrit };
+}
+
+/** ==========================================
+ * GAME CONSTANTS & GLOBALS
+ * ========================================== */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const miniCanvas = document.getElementById('minimap');
+const miniCtx = miniCanvas.getContext('2d');
+
+let cw = canvas.width = window.innerWidth;
+let ch = canvas.height = window.innerHeight;
+
+const WORLD_SIZE = 4000; // -2000 to +2000
+const FOCAL_LENGTH = 800; // For Z-axis perspective
+
+const GAME = {
+    state: 'PLAYING', // PLAYING, INVENTORY, DEAD
+    lastTime: 0,
+    camera: { x: 0, y: 0, zoom: 1.0 },
+    bossSpawned: false,
+    activeBoss: null,
+    bossDefeated: false,
+    keys: { w: false, a: false, s: false, d: false, ' ': false, '1': false, '2': false, '3': false, '4': false, 'f': false },
+    mouse: { x: cw/2, y: ch/2, worldX: 0, worldY: 0, left: false },
+    fowMap: new Map(), // Fog of War visited chunks
+    stars: [],
+    clouds: []
+};
+
+const AUDIO_CACHE = {};
+function playSound(file, volume = 0.5) {
+    if(!AUDIO_CACHE[file]) {
+        let newAudio = new Audio(file)
+        newAudio.crossOrigin = "anonymous";
+        AUDIO_CACHE[file] = new Audio(file);
+    }
+    let audio = AUDIO_CACHE[file].cloneNode();
+    audio.volume = volume;
+    audio.play().catch(e => {}); // Catch play-prevention to avoid error spam
+}
+
+/** ==========================================
+ * ICONS & SVG GENERATION
+ * ========================================== */
+const SVG_CACHE = {};
+
+function getIcon(type, color) {
+    let key = type + color;
+    if(SVG_CACHE[key]) return SVG_CACHE[key];
+    
+    let path = '';
+    if(type === 'Primary Weapon') path = '<path d="M5 12h14M12 5l7 7-7 7"/>';
+    else if(type === 'Secondary Weapon') path = '<circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/>';
+    else if(type === 'Hull') path = '<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>';
+    else if(type === 'Shields') path = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
+    else if(type === 'Engine') path = '<path d="M12 2c0 0-6 8-6 14a6 6 0 0 0 12 0c0-6-6-14-6-14z"/><path d="M12 12c0 0-2 3-2 6a2 2 0 0 0 4 0c0-3-2-6-2-6z"/>';
+    else if(type === 'Reactor') path = '<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="3" transform="rotate(45 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="3" transform="rotate(-45 12 12)"/>';
+    else if(type === 'Fuel') path = '<rect x="7" y="6" width="10" height="15" rx="2"/><path d="M10 2h4v4h-4z"/><line x1="12" y1="10" x2="12" y2="17"/>';
+    else if(type === 'BossSkull') path = '<path d="M12 2C6.477 2 2 6.477 2 12v4c0 2.21 1.79 4 4 4h2v2h8v-2h2c2.21 0 4-1.79 4-4v-4c0-5.523-4.477-10-10-10zM9 12c-.552 0-1 .448-1 1s.448 1 1 1 1-.448 1-1-.448-1-1-1zm6 0c-.552 0-1 .448-1 1s.448 1 1 1 1-.448 1-1-.448-1-1-1z"/>';
+    else if(type === 'Upgrade Material') path = '<polygon points="12 2 22 12 12 22 2 12"/>';
+    else path = '<polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>'; // Resource
+    
+    let rawSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${path}</svg>`;
+    
+    // Properly encode for Canvas Image src
+    let encodedSvg = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(rawSvg);
+    let img = new Image();
+    img.src = encodedSvg;
+    
+    SVG_CACHE[key] = { img: img, raw: rawSvg };
+    return SVG_CACHE[key];
+}
+
+/** ==========================================
+ * ENTITIES & MANAGERS
+ * ========================================== */
+let entities = [];
+let particles = [];
+let projectiles = [];
+let drops = [];
+let floatingTexts = [];
+let xpOrbs = [];
+let hpOrbs = [];
+let shockwaves = [];
+let warpTrails = [];
+
+const HP_ORB_DROP_RATE = 0.10;

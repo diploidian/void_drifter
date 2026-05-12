@@ -29,7 +29,7 @@ function calculateCrit(amount, source) {
     if (source && source.stats && source.stats.critChance) {
         if (Math.random() * 100 < source.stats.critChance) {
             isCrit = true;
-            amount *= 2;
+            amount *= 1.5;
         }
     }
     return { amount, isCrit };

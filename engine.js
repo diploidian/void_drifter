@@ -1,0 +1,596 @@
+/** ==========================================
+ * PROJECTION & RENDERING
+ * ========================================== */
+function getScale(z) {
+    return Math.max(0.05, (FOCAL_LENGTH / (FOCAL_LENGTH + z)) * GAME.camera.zoom);
+}
+
+function project(x, y, z) {
+    if (z <= -FOCAL_LENGTH) return null; // Behind camera
+    let scale = getScale(z);
+    let px = (x - GAME.camera.x) * scale + cw/2;
+    let py = (y - GAME.camera.y) * scale + ch/2;
+    // Culling
+    if(px < -100 || px > cw+100 || py < -100 || py > ch+100) return null;
+    return { x: px, y: py };
+}
+
+function drawGrid(ctx) {
+    ctx.strokeStyle = 'rgba(26, 43, 76, 0.3)';
+    ctx.lineWidth = 1;
+    let gridSize = 200;
+    
+    // Determine visible world bounds
+    let scale = getScale(0);
+    let left = GAME.camera.x - (cw/2)/scale;
+    let right = GAME.camera.x + (cw/2)/scale;
+    let top = GAME.camera.y - (ch/2)/scale;
+    let bottom = GAME.camera.y + (ch/2)/scale;
+
+    let startX = Math.floor(left / gridSize) * gridSize;
+    let startY = Math.floor(top / gridSize) * gridSize;
+
+    ctx.beginPath();
+    for(let x = startX; x < right; x += gridSize) {
+        let p1 = project(x, top, 0); let p2 = project(x, bottom, 0);
+        if(p1 && p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
+    }
+    for(let y = startY; y < bottom; y += gridSize) {
+        let p1 = project(left, y, 0); let p2 = project(right, y, 0);
+        if(p1 && p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
+    }
+    ctx.stroke();
+}
+
+/** ==========================================
+ * MAIN GAME LOOP & LOGIC
+ * ========================================== */
+function useSkill(index) {
+    let skill = player.skills[index];
+    
+    if (index === 3 && player.activeSingularity) {
+        player.activeSingularity.timer = 0; // detonate early
+        skill.cd = skill.maxCd; // start cd early
+        player.activeSingularity = null;
+        updateUI();
+        return;
+    }
+
+    if(skill.cd > 0) return;
+    if (index === 3 && player.activeSingularity) return; // safety against double cast logic mismatch
+    
+    if(skill.isFuel) {
+        if(player.stats.fuel < skill.cost) return;
+        player.stats.fuel -= skill.cost;
+    } else {
+        if(player.stats.energy < skill.cost) return;
+        player.stats.energy -= skill.cost;
+    }
+    
+    if (index !== 3) skill.cd = skill.maxCd; // Singularity sets CD on detonate
+    
+    let angle = MathUtils.angle(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
+    
+    if(index === 0) { // Pulse Blaster
+        let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
+        let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
+        
+        if (isTripleUpgraded) {
+            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/laserLarge_001.ogg');
+            projectiles.push(new WhipBeam(player.x, player.y, angle, getDamage(player), varColor('--accent'), player));
+        } else if (hasTriple) {
+            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/laserLarge_001.ogg');
+            projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
+        } else {
+            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/laserSmall_004.ogg');
+            projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
+        }
+    } 
+    else if(index === 1) { // EMP
+        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/spaceEngine_002.ogg');
+        createParticles(player.x, player.y, 0, 70, varColor('--shield'));
+        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
+        for(let e of entities) {
+            if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
+                e.takeDamage(getDamage(player) * 0.75, player, varColor('--shield'));
+                e.stunTimer = 3.0;
+            }
+        }
+    }
+    else if(index === 2) { // Warp Dash
+        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/doorOpen_002.ogg');
+        // Reduced 40% (500 -> 300)
+        let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
+        let oldX = player.x, oldY = player.y;
+        player.x += Math.cos(angle) * dist;
+        player.y += Math.sin(angle) * dist;
+        player.timers.immunity = 1.0;
+        
+        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, 0.75, varColor('--energy')));
+    }
+    else if(index === 3) { // Singularity
+        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/engineCircular_000.ogg');
+        player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
+        entities.push(player.activeSingularity);
+    }
+    updateUI();
+}
+
+function update(dt) {
+    if(GAME.state !== 'PLAYING') return;
+
+    if (equipment['Hull'] && equipment['Hull'].perk === 'Repairis') {
+        if (equipment['Hull'].upgradedPerk) {
+            player.timers.repairis = (player.timers.repairis || 0) + dt;
+            if (player.timers.repairis >= 5.0) {
+                player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + player.stats.maxHp * 0.03);
+                player.timers.repairis -= 5.0;
+                createFloatingText("+3% HP", player.x, player.y, '#00ff00', 1.5, false, true);
+            }
+        } else {
+            player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + (player.stats.maxHp * 0.005) * dt);
+        }
+    }
+
+    // --- Player Movement & Physics ---
+    let ax = 0, ay = 0;
+    if(GAME.keys.w) ay -= 1;
+    if(GAME.keys.s) ay += 1;
+    if(GAME.keys.a) ax -= 1;
+    if(GAME.keys.d) ax += 1;
+
+    if (ax !== 0 && ay !== 0) {
+        let len = Math.hypot(ax, ay);
+        ax /= len;
+        ay /= len;
+    }
+
+    ax *= player.stats.acceleration;
+    ay *= player.stats.acceleration;
+
+    player.vx += ax * dt;
+    player.vy += ay * dt;
+    player.vx *= player.stats.friction;
+    player.vy *= player.stats.friction;
+    
+    let currentMaxSpeed = player.stats.maxSpeed;
+    if (player.timers.dashActive > 0) {
+        currentMaxSpeed *= 2;
+    }
+
+    if(player.timers.mycelialDebuff > 0) {
+        player.timers.mycelialDebuff -= dt;
+        currentMaxSpeed *= 0.7; // 30% Slow
+        
+        // Drain 10% energy over 2 seconds => 5% per second
+        player.stats.energy -= (player.stats.maxEnergy * 0.05) * dt;
+        if(player.stats.energy < 0) player.stats.energy = 0;
+        
+        if(Math.random() < dt * 10) {
+            createParticles(player.x + MathUtils.rand(-15, 15), player.y + MathUtils.rand(-15, 15), 0, 1, '#99ff33', 0.5);
+        }
+    }
+    
+    let speed = Math.hypot(player.vx, player.vy);
+    if(speed > currentMaxSpeed) {
+        let ratio = currentMaxSpeed / speed;
+        player.vx *= ratio; player.vy *= ratio;
+    }
+
+    // Dodge
+    if(GAME.keys[' '] && player.timers.dodge <= 0) {
+        if(ax !== 0 || ay !== 0) {
+            let moveAngle = Math.atan2(ay, ax);
+            player.timers.dashActive = 0.4;
+            player.timers.dodge = 2.0; // cooldown
+            player.timers.immunity = 1.0;
+            
+            player.vx = Math.cos(moveAngle) * (player.stats.maxSpeed * 2);
+            player.vy = Math.sin(moveAngle) * (player.stats.maxSpeed * 2);
+            createParticles(player.x, player.y, 0, 20, varColor('--accent'));
+        }
+    }
+    if(player.timers.dodge > 0) player.timers.dodge -= dt;
+    if(player.timers.immunity > 0) player.timers.immunity -= dt;
+    if(player.timers.dashActive > 0) player.timers.dashActive -= dt;
+
+    // Apply movement
+    if(player.stats.fuel > 0 || speed < 50) {
+        player.x += player.vx * dt;
+        player.y += player.vy * dt;
+        // World Bounds
+        player.x = MathUtils.clamp(player.x, -WORLD_SIZE, WORLD_SIZE);
+        player.y = MathUtils.clamp(player.y, -WORLD_SIZE, WORLD_SIZE);
+    } else {
+        // Out of fuel, severely crippled movement
+        player.x += (player.vx * 0.1) * dt;
+        player.y += (player.vy * 0.1) * dt;
+    }
+
+    // Facing angle
+    player.angle = MathUtils.angle(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
+
+    // Camera follow
+    let targetX = player.x;
+    let targetY = player.y;
+    let dx = targetX - GAME.camera.x;
+    let dy = targetY - GAME.camera.y;
+    let dist = Math.hypot(dx, dy);
+    let maxSpeed = 1500; // max camera speed per second
+    let moveDist = dist * (1 - Math.exp(-5 * dt)); // spring damper
+    if (moveDist > maxSpeed * dt) moveDist = maxSpeed * dt;
+    if (dist > 0) {
+        GAME.camera.x += (dx / dist) * moveDist;
+        GAME.camera.y += (dy / dist) * moveDist;
+    }
+
+    // Mouse World coords
+    let scale = getScale(0);
+    GAME.mouse.worldX = (GAME.mouse.x - cw/2) / scale + GAME.camera.x;
+    GAME.mouse.worldY = (GAME.mouse.y - ch/2) / scale + GAME.camera.y;
+
+    // Auto attacks (Left Click)
+    if(GAME.mouse.left) useSkill(0);
+    
+    // Active Skills
+    if(GAME.keys['1']) useSkill(0);
+    if(GAME.keys['2']) useSkill(1);
+    if(GAME.keys['3']) useSkill(2);
+    if(GAME.keys['4']) useSkill(3);
+
+    // Damage Intensity Decay
+    if(player.damageIntensity > 0) {
+        player.damageIntensity = Math.max(0, player.damageIntensity - dt);
+    }
+
+    // --- Resource Regen & Drain ---
+    if(speed > 10) {
+        let eff = 1.0;
+        if (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') {
+            eff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
+        }
+        
+        player.stats.fuel -= (speed / player.stats.maxSpeed) * 9 * eff * dt;
+        if(player.stats.fuel < 0) player.stats.fuel = 0;
+        // Engine particles
+        if(Math.random() < 0.5) {
+            let backX = player.x - Math.cos(player.angle)*15;
+            let backY = player.y - Math.sin(player.angle)*15;
+            createParticles(backX, backY, 0, 1, varColor('--fuel'), 0.5);
+        }
+    }
+    
+    player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + player.stats.energyRegen * dt);
+    
+    if(player.timers.shieldRegen <= 0) {
+        player.stats.shields = Math.min(player.stats.maxShields, player.stats.shields + player.stats.shieldRegen * dt);
+    } else {
+        player.timers.shieldRegen -= dt;
+        if(player.timers.shieldRegen <= 0 && player.stats.shields < player.stats.maxShields) {
+            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/forceField_002.ogg');
+        }
+    }
+
+    for(let i=0; i<4; i++) {
+        if(player.skills[i].cd > 0) player.skills[i].cd -= dt;
+    }
+
+    // --- Entity Updates ---
+    for(let i=entities.length-1; i>=0; i--) {
+        if(entities[i].dead) {
+            entities.splice(i, 1);
+        } else if(entities[i].update(dt)) {
+            entities.splice(i, 1);
+        }
+    }
+    for(let i=projectiles.length-1; i>=0; i--) {
+        if(projectiles[i].update(dt)) projectiles.splice(i, 1);
+    }
+    for(let i=drops.length-1; i>=0; i--) {
+        if(drops[i].update(dt)) drops.splice(i, 1);
+    }
+    for(let i=xpOrbs.length-1; i>=0; i--) {
+        if(xpOrbs[i].update(dt)) xpOrbs.splice(i, 1);
+    }
+    for(let i=hpOrbs.length-1; i>=0; i--) {
+        if(hpOrbs[i].update(dt)) hpOrbs.splice(i, 1);
+    }
+    for(let i=particles.length-1; i>=0; i--) {
+        if(particles[i].update(dt)) particles.splice(i, 1);
+    }
+    for(let i=shockwaves.length-1; i>=0; i--) {
+        if(shockwaves[i].update(dt)) shockwaves.splice(i, 1);
+    }
+    for(let i=warpTrails.length-1; i>=0; i--) {
+        if(warpTrails[i].update(dt)) warpTrails.splice(i, 1);
+    }
+    for(let i=floatingTexts.length-1; i>=0; i--) {
+        floatingTexts[i].update(dt);
+        if(floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
+    }
+
+// Enemy Spawning
+if (!GAME.activeBoss && Math.random() < dt * 0.5) {
+    let angle = Math.random() * Math.PI * 2;
+    let dist = MathUtils.rand(800, 1200);
+    if (GAME.bossDefeated && Math.random() < 0.20) {
+        let r = Math.random();
+        if (r < 0.5) {
+            entities.push(new MycelialSpreader(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+        } else {
+            entities.push(new MonolithArchitect(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+        }
+    } else {
+        entities.push(new Enemy(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
+    }
+}
+
+// Map chunk discovery for minimap
+let chunkX = Math.floor(player.x / 200);
+let chunkY = Math.floor(player.y / 200);
+GAME.fowMap.set(`${chunkX},${chunkY}`, true);
+
+updateUI();
+}
+
+function draw() {
+    ctx.fillStyle = varColor('--bg');
+    ctx.fillRect(0, 0, cw, ch);
+    
+    // Draw Stars
+    let time = Date.now() / 1000;
+    for(let s of GAME.stars) {
+        let p = project(s.x, s.y, s.z);
+        if(p) {
+            let alpha = 0.3 + 0.4 * Math.sin(time * s.pulseSpeed + s.offset);
+            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            let scale = getScale(s.z);
+            ctx.beginPath(); ctx.arc(p.x, p.y, s.size * scale, 0, Math.PI*2); ctx.fill();
+        }
+    }
+
+    // Draw Clouds
+    for(let c of GAME.clouds) {
+        let p = project(c.x, c.y, c.z);
+        if(p) {
+            let scale = getScale(c.z);
+            let rad = c.radius * scale;
+            let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
+            grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${c.alpha})`);
+            grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI*2); ctx.fill();
+        }
+    }
+
+    drawGrid(ctx);
+
+    // Draw order: Z-sorting
+    let allRenderables = [
+        ...entities, ...drops, ...xpOrbs, ...hpOrbs, ...particles, ...projectiles, ...shockwaves, ...warpTrails,
+        { isPlayerShip: true, x: player.x, y: player.y, z: 0 }
+    ].sort((a, b) => b.z - a.z); // draw deep space first
+
+    for(let obj of allRenderables) {
+        if(obj.isPlayerShip) {
+            let p = project(player.x, player.y, 0);
+            if(p) {
+                let s = getScale(0);
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.scale(s, s);
+                
+                // Ability Range Faint Overlays (Under ship, stationary relative to ship orientation)
+                ctx.lineWidth = 1;
+
+                // Pulse Blaster Range (Skill 1) - 6 Grid Squares = 1200 units
+                ctx.strokeStyle = 'rgba(0, 210, 255, 0.05)';
+                ctx.beginPath(); ctx.arc(0,0,1200,0,Math.PI*2); ctx.stroke();
+
+                // EMP (Skill 2) - reduced 40% to 270
+                ctx.strokeStyle = 'rgba(51, 204, 255, 0.1)';
+                ctx.beginPath(); ctx.arc(0,0,270,0,Math.PI*2); ctx.stroke();
+                
+                // Warp Dash (Skill 3 limit) - reduced 40% to 300
+                ctx.strokeStyle = 'rgba(153, 51, 255, 0.08)';
+                ctx.beginPath(); ctx.arc(0,0,300,0,Math.PI*2); ctx.stroke();
+                
+                // Singularity Placement Indicator - reduced 40% to 360
+                ctx.strokeStyle = 'rgba(255, 0, 85, 0.05)';
+                ctx.beginPath(); ctx.arc(0,0,360,0,Math.PI*2); ctx.stroke();
+
+                // Dash Cooldown Indicator
+                if(player.timers.dodge > 0) {
+                    let dodgeProgress = player.timers.dodge / 2.0;
+                    ctx.strokeStyle = `rgba(255, 255, 255, 0.5)`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.arc(0,0,32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * dodgeProgress); ctx.stroke();
+                }
+
+                ctx.rotate(player.angle);
+                
+                if (player.timers.immunity > 0) {
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#fff';
+                }
+
+                // Ship Body
+                ctx.fillStyle = '#111';
+                ctx.strokeStyle = player.timers.immunity > 0 ? '#fff' : varColor('--accent');
+                ctx.lineWidth = player.timers.immunity > 0 ? 3 : 2;
+                ctx.beginPath();
+                ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-10, 0); ctx.lineTo(-15, -15);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+
+                // Shields
+                if(player.stats.shields > 0) {
+                    ctx.strokeStyle = `rgba(51, 204, 255, ${0.2 + (player.stats.shields/player.stats.maxShields)*0.5})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.arc(0,0,25,0,Math.PI*2); ctx.stroke();
+                }
+                ctx.restore();
+            }
+        } else {
+            obj.draw(ctx);
+        }
+    }
+
+    // Floating Text (Always on top)
+    for(let ft of floatingTexts) {
+        ft.draw(ctx);
+    }
+
+    // Danger Screen Glow Overlay
+    if (player.damageIntensity > 0.1) {
+        let alpha = Math.min(0.6, player.damageIntensity * 0.5);
+        let grad = ctx.createRadialGradient(cw/2, ch/2, Math.min(cw,ch)*0.2, cw/2, ch/2, Math.max(cw,ch)*0.8);
+        grad.addColorStop(0, 'rgba(255,0,0,0)');
+        grad.addColorStop(1, `rgba(255,0,0,${alpha})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0,0,cw,ch);
+    }
+
+    if (GAME.activeBoss && !project(GAME.activeBoss.x, GAME.activeBoss.y, GAME.activeBoss.z)) {
+        let angleToBoss = MathUtils.angle(player.x, player.y, GAME.activeBoss.x, GAME.activeBoss.y);
+        let screenX = cw/2 + Math.cos(angleToBoss) * (cw/2 - 40);
+        let screenY = ch/2 + Math.sin(angleToBoss) * (ch/2 - 40);
+        screenX = MathUtils.clamp(screenX, 40, cw - 40);
+        screenY = MathUtils.clamp(screenY, 40, ch - 40);
+
+        ctx.save();
+        ctx.translate(screenX, screenY);
+        ctx.rotate(angleToBoss + Math.PI/2);
+        let icon = getIcon('BossSkull', '#ff0000');
+        if (icon.img.complete) {
+            ctx.drawImage(icon.img, -15, -15, 30, 30);
+        }
+        ctx.restore();
+    }
+
+    drawMinimap();
+}
+
+function drawMinimap() {
+    let w = miniCanvas.width = 200;
+    let h = miniCanvas.height = 200;
+    
+    miniCtx.fillStyle = '#050508';
+    miniCtx.fillRect(0,0,w,h);
+    
+    let mapScale = w / (WORLD_SIZE * 2);
+    
+    // Draw FOW & Radar
+    miniCtx.fillStyle = 'rgba(255,255,255,0.1)';
+    for(let [key, val] of GAME.fowMap) {
+        let parts = key.split(',');
+        let cx = (parseInt(parts[0]) * 200 + WORLD_SIZE) * mapScale;
+        let cy = (parseInt(parts[1]) * 200 + WORLD_SIZE) * mapScale;
+        miniCtx.fillRect(cx, cy, 200*mapScale, 200*mapScale);
+    }
+    
+    // Entities on minimap
+    for(let e of entities) {
+        let mx = (e.x + WORLD_SIZE) * mapScale;
+        let my = (e.y + WORLD_SIZE) * mapScale;
+        if(mx<0 || mx>w || my<0 || my>h) continue;
+        
+        if(e instanceof Asteroid) { miniCtx.fillStyle = '#555'; miniCtx.fillRect(mx-1, my-1, 2, 2); }
+        if(e instanceof Enemy) { miniCtx.fillStyle = '#f00'; miniCtx.fillRect(mx-1, my-1, 3, 3); }
+    }
+    
+    // Player
+    let px = (player.x + WORLD_SIZE) * mapScale;
+    let py = (player.y + WORLD_SIZE) * mapScale;
+    miniCtx.fillStyle = varColor('--accent');
+    miniCtx.beginPath(); miniCtx.arc(px, py, 3, 0, Math.PI*2); miniCtx.fill();
+    
+    // Radar circle
+    miniCtx.strokeStyle = 'rgba(0, 210, 255, 0.3)';
+    miniCtx.beginPath(); miniCtx.arc(px, py, 800 * mapScale, 0, Math.PI*2); miniCtx.stroke();
+}
+
+function varColor(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function loop(timestamp) {
+    let dt = (timestamp - GAME.lastTime) / 1000;
+    if(dt > 0.1) dt = 0.1; // cap delta time
+    GAME.lastTime = timestamp;
+    
+    update(dt);
+    draw();
+    
+    requestAnimationFrame(loop);
+}
+
+/** ==========================================
+ * INPUT LISTENERS
+ * ========================================== */
+window.addEventListener('resize', () => {
+    cw = canvas.width = window.innerWidth;
+    ch = canvas.height = window.innerHeight;
+});
+window.addEventListener('keydown', e => {
+    let k = e.key.toLowerCase();
+    if(GAME.keys.hasOwnProperty(k)) GAME.keys[k] = true;
+    if(k === 'i' || k === 'c') toggleInventory();
+    if(k === 'f') useFuelCell();
+});
+window.addEventListener('keyup', e => {
+    let k = e.key.toLowerCase();
+    if(GAME.keys.hasOwnProperty(k)) GAME.keys[k] = false;
+});
+window.addEventListener('mousemove', e => {
+    GAME.mouse.x = e.clientX; GAME.mouse.y = e.clientY;
+});
+window.addEventListener('mousedown', e => {
+    if(e.button === 0 && GAME.state === 'PLAYING') GAME.mouse.left = true;
+});
+window.addEventListener('mouseup', e => {
+    if(e.button === 0) GAME.mouse.left = false;
+});
+window.addEventListener('wheel', e => {
+    if(GAME.state === 'PLAYING') {
+        GAME.camera.zoom -= Math.sign(e.deltaY) * 0.1;
+        GAME.camera.zoom = MathUtils.clamp(GAME.camera.zoom, 0.3, 2.0);
+    }
+});
+
+function useFuelCell() {
+    let idx = inventory.findIndex(i => i && i.type === 'Fuel');
+    if (idx !== -1) {
+        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/impactMetal_004.ogg');
+        let item = inventory[idx];
+        let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
+        player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
+        item.count--;
+        if (item.count <= 0) inventory[idx] = null;
+        renderInventory();
+        updateUI();
+    }
+}
+
+// Setup
+player.updateStats();
+initMap();
+player.stats.fuel = player.stats.maxFuel; // Start full
+inventory[0] = {
+    id: 'start-fuel',
+    name: 'Fuel Cell',
+    type: 'Fuel',
+    tier: 0,
+    itemLevel: 1,
+    stackable: true,
+    count: 3,
+    desc: 'Restores 20 Fuel on use.'
+};
+renderInventory();
+renderEquipment();
+updateUI();
+requestAnimationFrame(t => { GAME.lastTime = t; loop(t); });
