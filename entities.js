@@ -129,8 +129,7 @@ class Asteroid {
 
 class Enemy {
     constructor(x, y) {
-        this.x = x; this.y = y; this.z = 500; // Spawn from deep space
-        this.vx = 0; this.vy = 0; this.vz = -500; // Move up to z=0
+        this.x = x; this.y = y; this.z = 0; // Spawn at z=0
         this.radius = 12;
         this.level = player.level;
         
@@ -462,7 +461,7 @@ class MycelialSpreader extends Enemy {
         super(x, y);
         this.radius = 20;
         this.type = 'spreader';
-        this.color = '#99ff33'; // Bioluminescent Green
+        this.color = '#af8123'; // Baby Shit Brown
         this.speed = 100 + this.level * 1.5;
         this.maxHp = 100 * (1 + (this.level - 1) * 0.3);
         this.hp = this.maxHp;

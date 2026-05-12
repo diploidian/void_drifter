@@ -311,8 +311,14 @@ function update(dt) {
         if(floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
     }
 
-// Enemy Spawning
-if (!GAME.activeBoss && Math.random() < dt * 0.5) {
+    // Enemy Spawning
+    let baseXP = 0;
+    for (let i = 1; i < player.level; i++) baseXP += 100 * i;
+    let totalXP = baseXP + player.xp;
+    let progress = MathUtils.clamp(totalXP / 800, 0, 1.0); // 800 XP is halfway through Level 4
+    let spawnRate = 0.5 + 0.5 * Math.pow(progress, 2); // Exponential curve
+
+    if (!GAME.activeBoss && Math.random() < dt * spawnRate) {
     let angle = Math.random() * Math.PI * 2;
     let dist = MathUtils.rand(800, 1200);
     if (GAME.bossDefeated && Math.random() < 0.20) {
