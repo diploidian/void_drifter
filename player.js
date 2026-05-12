@@ -243,7 +243,7 @@ const player = {
             
             // Low HP sound trigger (triggers upon dropping to 25% or less)
             if (this.stats.hp > 0 && this.stats.hp <= this.stats.maxHp * 0.25 && oldHp > this.stats.maxHp * 0.25) {
-                playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@<commit-hash>/sounds/spaceEngine_000.ogg');
+                playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/spaceEngine_000.ogg');
             }
 
             // Screen Glow intensity increase

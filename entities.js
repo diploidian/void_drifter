@@ -978,7 +978,7 @@ class SpecialFuelDrop {
         if (distToPlayer < player.radius + this.radius) {
             player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + this.fuelAmount);
             createFloatingText(`+${Math.floor(this.fuelAmount)} Fuel`, this.x, this.y, '#ffff00', 1.5, true);
-            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@<commit-hash>/sounds/impactMetal_004.ogg');
+            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/impactMetal_004.ogg');
             updateUI();
             return true;
         }
