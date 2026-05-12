@@ -15,6 +15,7 @@ class Asteroid {
         }
         this.rotation = 0;
         this.rotSpeed = MathUtils.rand(-1, 1) * 0.02;
+        this.collisionDamageMult = 0.05;
     }
     update(dt) {
         this.x += this.vx * dt; this.y += this.vy * dt;
@@ -37,7 +38,7 @@ class Asteroid {
             player.vy = Math.sin(angle) * (speed * 0.5 + 100);
             
             if(speed > 50) {
-                let dmg = Math.floor(speed * 0.05); // damage based on speed
+                let dmg = Math.floor(speed * this.collisionDamageMult); // damage based on speed
                 player.takeDamage(dmg);
             }
         }
@@ -136,7 +137,14 @@ class Enemy {
         // Scale HP and Damage with Level
         this.maxHp = 50 * (1 + (this.level - 1) * 0.3);
         this.hp = this.maxHp;
-        this.damage = 5 * (1 + (this.level - 1) * 0.2);
+        
+        this.baseDamage = 5;
+        this.damageScale = 0.2;
+        this.meleeMult = 1.15;
+        this.aoeMeleeMult = 1.5; // (3/2)
+        this.shooterDamageMult = 1.7;
+        this.rapidShotDamageMult = 1.0;
+        this.damage = this.baseDamage * (1 + (this.level - 1) * this.damageScale);
         this.dead = false;
         
         this.speed = 150 + (this.level * 2); // get slightly faster
@@ -195,17 +203,17 @@ class Enemy {
             // Melee attack
             if (dist < 20 + player.radius) {
                 if (this.attackTimer <= 0) {
-                    player.takeDamage(getDamage(this) * 1.15, this);
+                    player.takeDamage(getDamage(this) * this.meleeMult, this);
                     this.attackTimer = 1.0;
                     this.chaserKnockbackTimer = 0.2;
                     this.chaserSlowTimer = 1.2;
-                    this.knockbackVx = -Math.cos(angle) * 500;
-                    this.knockbackVy = -Math.sin(angle) * 500;
+                    this.knockbackVx = -Math.cos(angle) * 250;
+                    this.knockbackVy = -Math.sin(angle) * 250;
                     this.vx = this.knockbackVx;
                     this.vy = this.knockbackVy;
                     this.attackCombo++;
                     if (this.attackCombo >= 4) {
-                        let aoeDmg = (getDamage(this) * 3) / 2;
+                        let aoeDmg = getDamage(this) * this.aoeMeleeMult;
                         player.takeDamage(aoeDmg, this);
                         
                         for (let e of entities) {
@@ -252,7 +260,7 @@ class Enemy {
                 // 3. Handle the Rapid Fire sequence
                 if (this.rapidShotsToFire > 0) {
                     if (this.rapidShotInterval <= 0) {
-                        projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this), false, this.color, this));
+                        projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this) * this.rapidShotDamageMult, false, this.color, this));
                         this.rapidShotsToFire--;
                         this.rapidShotInterval = 0.2; 
                         
@@ -264,7 +272,7 @@ class Enemy {
                 } 
                 // 4. Otherwise, fire a normal shot
                 else {
-                    projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this), false, this.color, this));
+                    projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this) * this.shooterDamageMult, false, this.color, this));
                     this.attackTimer = 2.0;
                 }
             }
@@ -465,7 +473,14 @@ class MycelialSpreader extends Enemy {
         this.speed = 100 + this.level * 1.5;
         this.maxHp = 100 * (1 + (this.level - 1) * 0.3);
         this.hp = this.maxHp;
+        
+        this.baseDamage = 10; 
+        this.damageScale = 0.2;
+        this.spreaderDamageMult = 1.0;
+        this.damage = this.baseDamage * (1 + (this.level - 1) * this.damageScale);
+        
         this.nodeTimer = 2.0; 
+        this.attackTimer = 0;
     }
     update(dt) {
         if(super.update(dt)) return true; // Spawning or stun handling from superclass
@@ -489,6 +504,12 @@ class MycelialSpreader extends Enemy {
         
         this.x += this.vx * dt;
         this.y += this.vy * dt;
+        
+        if (this.attackTimer > 0) this.attackTimer -= dt;
+        if (dist < this.radius + player.radius && this.attackTimer <= 0) {
+            player.takeDamage(getDamage(this) * this.spreaderDamageMult, this);
+            this.attackTimer = 1.0;
+        }
         
         this.nodeTimer -= dt;
         if (this.nodeTimer <= 0) {
@@ -618,6 +639,12 @@ class MonolithArchitect extends Enemy {
         this.speed = 60 + this.level * 1.5;
         this.maxHp = 250 * (1 + (this.level - 1) * 0.4);
         this.hp = this.maxHp;
+        
+        this.baseDamage = 5;
+        this.damageScale = 0.2;
+        this.monolithDamageMult = 2.0;
+        this.damage = this.baseDamage * (1 + (this.level - 1) * this.damageScale);
+        
         this.summonTimer = 3.0; // Quick initial cast
         this.summonCooldown = 12.0;
     }
@@ -653,7 +680,7 @@ class MonolithArchitect extends Enemy {
         
         this.summonTimer -= dt;
         if (this.summonTimer <= 0) {
-            entities.push(new BrutalistMonolith(player.x, player.y, this.level, getDamage(this) * 2, this));
+            entities.push(new BrutalistMonolith(player.x, player.y, this.level, getDamage(this) * this.monolithDamageMult, this));
             this.summonTimer = this.summonCooldown;
         }
         return false;
@@ -771,6 +798,7 @@ class WhipBeam {
         this.source = source;
         this.life = 0.2;
         this.maxLife = 0.2;
+        this.chainDamageMult = 0.5;
 
         let maxDist = 1200;
         let endX = this.x + Math.cos(this.angle) * maxDist;
@@ -812,7 +840,7 @@ class WhipBeam {
                 if (eDist <= len) {
                     let num = Math.abs((this.targetX - this.x)*(this.y - e.y) - (this.x - e.x)*(this.targetY - this.y));
                     let dLine = num / len;
-                    if (dLine < e.radius + 15) e.takeDamage(this.damage * 0.5, this.source, this.color);
+                    if (dLine < e.radius + 15) e.takeDamage(this.damage * this.chainDamageMult, this.source, this.color);
                 }
             }
         }
@@ -914,6 +942,12 @@ class HomingMissile {
         this.radius = 15;
         this.source = source;
         this.color = '#ffaa00';
+        this.explosionDamagePercent = 0.15;
+        
+        this.baseDamage = 20;
+        this.damageScale = 0.2;
+        this.explosionDamageMult = 1.0;
+        this.damage = this.baseDamage * (1 + (player.level - 1) * this.damageScale);
     }
     update(dt) {
         if (this.dead) return true;
@@ -950,7 +984,9 @@ class HomingMissile {
         shockwaves.push(new Shockwave(this.x, this.y, 0, '#ff4400', 75));
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
         if (dist <= 75) {
-            player.takeDamage(player.stats.maxHp * 0.15, this.source);
+            let hpDmg = player.stats.maxHp * this.explosionDamagePercent;
+            let flatDmg = getDamage(this) * this.explosionDamageMult;
+            player.takeDamage(hpDmg + flatDmg, this.source);
         }
     }
     draw(ctx) {
@@ -1020,9 +1056,16 @@ class Boss extends Enemy {
         super(x, y);
         this.radius = 40;
         this.level = player.level;
-        this.maxHp = 1500 * (1 + (this.level - 1) * 0.5);
+        this.maxHp = 2500 * (1 + (this.level - 1) * 0.5);
         this.hp = this.maxHp;
-        this.damage = 50 * (1 + (this.level - 1) * 0.3);
+        
+        this.baseDamage = 50;
+        this.damageScale = 0.3;
+        this.chargeDamageMult = 3.0;
+        this.barrageDamageMult = 0.6;
+        this.contactDamageMult = 1.0;
+        this.damage = this.baseDamage * (1 + (this.level - 1) * this.damageScale);
+        
         this.speed = 100;
         this.color = '#ff4400';
         this.type = 'boss';
@@ -1055,19 +1098,19 @@ class Boss extends Enemy {
         if (charge.active) {
             charge.duration -= dt;
             if (charge.duration <= 0) charge.active = false;
-            if (dist < this.radius + player.radius) player.takeDamage(getDamage(this) * 3, this);
+            if (dist < this.radius + player.radius) player.takeDamage(getDamage(this) * this.chargeDamageMult, this);
         } else if (charge.cd <= 0 && dist > 200 && dist < 800) {
             charge.active = true;
             charge.duration = 1.5;
-            this.vx = Math.cos(angle) * 300;
-            this.vy = Math.sin(angle) * 300;
+            this.vx = Math.cos(angle) * 450;
+            this.vy = Math.sin(angle) * 450;
             charge.cd = charge.maxCd;
         }
 
         let barrage = this.abilities[1];
         if (barrage.cd <= 0) {
             for(let i=-3; i<=3; i++) {
-                projectiles.push(new Projectile(this.x, this.y, angle + i * (Math.PI/16), 400, getDamage(this) * 0.8, false, '#ff8800', this));
+                projectiles.push(new Projectile(this.x, this.y, angle + i * (Math.PI/16), 600, getDamage(this) * this.barrageDamageMult, false, '#ff8800', this));
             }
             barrage.cd = barrage.maxCd;
         }
@@ -1081,10 +1124,16 @@ class Boss extends Enemy {
         if (!charge.active) {
             this.vx = Math.cos(angle) * this.speed;
             this.vy = Math.sin(angle) * this.speed;
+            
+            if (dist < this.radius + player.radius && this.attackTimer <= 0) {
+                player.takeDamage(getDamage(this) * this.contactDamageMult, this);
+                this.attackTimer = 1.0;
+            }
         }
 
         this.x += this.vx * dt;
         this.y += this.vy * dt;
+        if(this.attackTimer > 0) this.attackTimer -= dt;
     }
 
     draw(ctx) {
@@ -1150,6 +1199,8 @@ class Singularity {
         this.timer = 3.0; // blackhole duration
         this.radius = 0;
         this.tickTimer = 0;
+        this.tickDamageMult = 0.35;
+        this.explosionDamageMult = 2.0;
     }
     update(dt) {
         if (this.state === 'moving') {
@@ -1181,7 +1232,7 @@ class Singularity {
                 this.tickTimer = 0.25;
                 for(let e of entities) {
                     if (e instanceof Enemy && !e.dead && e.z <= 0 && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        e.takeDamage(getDamage(player) * 0.35, player, '#9933ff');
+                        e.takeDamage(getDamage(player) * this.tickDamageMult, player, '#9933ff');
                     }
                 }
             }
@@ -1203,7 +1254,7 @@ class Singularity {
                 createParticles(this.x, this.y, 0, 100, '#9933ff');
                 for(let e of entities) {
                     if (!e.dead && (e instanceof Enemy || e instanceof Asteroid) && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        e.takeDamage(getDamage(player) * 2, player, '#9933ff');
+                        e.takeDamage(getDamage(player) * this.explosionDamageMult, player, '#9933ff');
                     }
                 }
                 if (player.activeSingularity === this) {
@@ -1250,6 +1301,7 @@ class WarpTrail {
         this.len = Math.hypot(this.dx, this.dy);
         this.angle = Math.atan2(this.dy, this.dx);
         this.tickTimer = 0;
+        this.tickDamageMult = 0.4;
     }
     update(dt) {
         this.life -= dt;
@@ -1272,7 +1324,8 @@ class WarpTrail {
 
         this.tickTimer -= dt;
         if (this.len > 0 && this.tickTimer <= 0) {
-            this.tickTimer = 0.25; // apply 25% of DPS every 0.25s
+            let fireRateMult = player.stats.fireRate / 100;
+            this.tickTimer = this.tickDamageMult / fireRateMult;
             let halfAngle = Math.PI / 12; // 15 degrees
             for (let i = entities.length - 1; i >= 0; i--) {
                 let e = entities[i];
@@ -1286,7 +1339,7 @@ class WarpTrail {
                         diff = Math.abs(diff);
 
                         if (diff <= halfAngle + (e.radius / Math.max(1, dist))) {
-                            e.takeDamage(getDamage(player) * this.mult * 0.25, player, this.color);
+                            e.takeDamage(getDamage(player) * this.mult * this.tickDamageMult, player, this.color);
                         }
                     }
                 }

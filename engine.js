@@ -108,7 +108,10 @@ function useSkill(index) {
         player.y += Math.sin(angle) * dist;
         player.timers.immunity = 1.0;
         
-        warpTrails.push(new WarpTrail(oldX, oldY, player.x, player.y, 170, 0.75, varColor('--energy')));
+        let blastStartX = oldX - Math.cos(angle) * 200;
+        let blastStartY = oldY - Math.sin(angle) * 200;
+        
+        warpTrails.push(new WarpTrail(blastStartX, blastStartY, player.x, player.y, 170, 0.75, varColor('--energy')));
     }
     else if(index === 3) { // Singularity
         playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/engineCircular_000.ogg');
@@ -147,14 +150,6 @@ function update(dt) {
         ay /= len;
     }
 
-    ax *= player.stats.acceleration;
-    ay *= player.stats.acceleration;
-
-    player.vx += ax * dt;
-    player.vy += ay * dt;
-    player.vx *= player.stats.friction;
-    player.vy *= player.stats.friction;
-    
     let currentMaxSpeed = player.stats.maxSpeed;
     if (player.timers.dashActive > 0) {
         currentMaxSpeed *= 2;
@@ -187,8 +182,11 @@ function update(dt) {
             player.timers.dodge = 2.0; // cooldown
             player.timers.immunity = 1.0;
             
-            player.vx = Math.cos(moveAngle) * (player.stats.maxSpeed * 2);
-            player.vy = Math.sin(moveAngle) * (player.stats.maxSpeed * 2);
+            let dashSpeed = player.stats.maxSpeed * 2;
+            if (player.timers.mycelialDebuff > 0) dashSpeed *= 0.7;
+            
+            player.vx = Math.cos(moveAngle) * dashSpeed;
+            player.vy = Math.sin(moveAngle) * dashSpeed;
             createParticles(player.x, player.y, 0, 20, varColor('--accent'));
         }
     }
@@ -312,10 +310,22 @@ function update(dt) {
     }
 
     // Enemy Spawning
-    let baseXP = 0;
-    for (let i = 1; i < player.level; i++) baseXP += 100 * i;
+    // baseXP sum is mathematically 50 * n * (n-1)
+    let baseXP = 50 * player.level * (player.level - 1);
     let totalXP = baseXP + player.xp;
-    let progress = MathUtils.clamp(totalXP / 800, 0, 1.0); // 800 XP is halfway through Level 4
+
+    // Cycle 0: Lv 1-4, Cycle 1: Lv 5-9, Cycle 2: Lv 10-14, etc.
+    let cycle = Math.floor(player.level / 5);
+    
+    // Peak at the 50% mark of the 4th level in the current cycle (e.g., 4.5, 9.5, 14.5)
+    let peakLevel = cycle * 5 + 4;
+    let targetXP = (50 * peakLevel * (peakLevel - 1)) + (100 * peakLevel * 0.5);
+
+    // Reset curve at the start of each new cycle (Level 1, 5, 10)
+    let startLevel = cycle === 0 ? 1 : cycle * 5;
+    let startXP = 50 * startLevel * (startLevel - 1);
+
+    let progress = MathUtils.clamp((totalXP - startXP) / Math.max(1, targetXP - startXP), 0, 1.5);
     let spawnRate = 0.5 + 0.5 * Math.pow(progress, 2); // Exponential curve
 
     if (!GAME.activeBoss && Math.random() < dt * spawnRate) {

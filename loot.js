@@ -100,7 +100,7 @@ function generateLoot(type = null, tierLevel = -1) {
         else if (stat === 'armorRating') { val = Math.floor(MathUtils.rand(20, 30) * Math.pow(tier.mult, 2) * lvlMult); str = `+${val} Armor Rating`; }
         else if (stat === 'maxShields') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult); str = `+${val} Max Shields`; }
         else if (stat === 'shieldRegen') { val = Math.floor(MathUtils.rand(2, 8) * tier.mult * lvlMult); str = `+${val} Shield/sec`; }
-        else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(5, 12) * tier.mult); str = `+${val} Max Speed`; }
+        else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult); str = `+${val} Max Speed`; }
         else if (stat === 'acceleration') { val = Math.floor(MathUtils.rand(10, 30) * tier.mult * lvlMult); str = `+${val} Thrust`; }
         else if (stat === 'maxEnergy') { val = Math.floor(MathUtils.rand(20, 60) * tier.mult * lvlMult); str = `+${val} Max Energy`; }
         else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
