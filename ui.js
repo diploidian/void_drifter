@@ -389,7 +389,7 @@ function useItem(index) {
     if(!item) return;
 
     if (item.type === 'Fuel') {
-        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/impactMetal_004.ogg');
+        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@<commit-hash>/sounds/impactMetal_004.ogg');
         let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
@@ -608,7 +608,7 @@ function toggleInventory() {
 }
 
 function die() {
-    playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/explosionCrunch_003.ogg');
+    playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@<commit-hash>/sounds/explosionCrunch_003.ogg');
     GAME.state = 'DEAD';
     document.getElementById('char-sheet').style.display = 'none';
     document.body.classList.remove('inv-open');

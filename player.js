@@ -47,7 +47,7 @@ const AUGMENT_POOL = [
     {
         id: 'rapidFireRelay', name: 'Rapid-Fire Relay', color: '#ffcc00',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
-        roll: () => Math.floor(10 * (1 + Math.max(0, player.level - 6) * 0.15)), desc: (v) => `+${v} Fire Rate Rating`,
+        roll: () => Math.max(1, Math.floor(10 * (1 + (player.level - 6) * 0.15))), desc: (v) => `+${v} Fire Rate Rating`,
         effect: (v) => { BASE_STATS.fireRateRating = (BASE_STATS.fireRateRating || 0) + v; }
     },
     {
@@ -71,13 +71,13 @@ const AUGMENT_POOL = [
     {
         id: 'kineticDampeners', name: 'Kinetic Dampeners', color: '#aaaaaa',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
-        roll: () => Math.floor(10 * (1 + Math.max(0, player.level - 6) * 0.15)), desc: (v) => `+${v} Armor Rating`,
+        roll: () => Math.max(1, Math.floor(10 * (1 + (player.level - 6) * 0.15))), desc: (v) => `+${v} Armor Rating`,
         effect: (v) => { BASE_STATS.armorRating += v; } 
     },
     {
         id: 'targetingComputer', name: 'Targeting Computer', color: '#ff3366',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
-        roll: () => Math.floor(10 * (1 + Math.max(0, player.level - 6) * 0.15)), desc: (v) => `+${v} Crit Rating`,
+        roll: () => Math.max(1, Math.floor(10 * (1 + (player.level - 6) * 0.15))), desc: (v) => `+${v} Crit Rating`,
         effect: (v) => { BASE_STATS.critRating += v; }
     },
     {
@@ -243,7 +243,7 @@ const player = {
             
             // Low HP sound trigger (triggers upon dropping to 25% or less)
             if (this.stats.hp > 0 && this.stats.hp <= this.stats.maxHp * 0.25 && oldHp > this.stats.maxHp * 0.25) {
-                playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/sounds/spaceEngine_000.ogg');
+                playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@<commit-hash>/sounds/spaceEngine_000.ogg');
             }
 
             // Screen Glow intensity increase
