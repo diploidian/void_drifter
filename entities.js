@@ -1667,11 +1667,11 @@ class FloatingText {
                 ctx.shadowBlur = 0;
                 ctx.strokeText(lines[j], p.x, p.y + j * (size + 4));
             } else {
-                ctx.shadowColor = 'black';
-                ctx.shadowBlur = 4;
+                // Replaced shadowBlur with a much faster manual drop shadow
+                ctx.fillStyle = 'black';
+                ctx.fillText(lines[j], p.x + 2, p.y + j * (size + 4) + 2);
                 ctx.fillStyle = this.color;
                 ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
-                ctx.shadowBlur = 0;
             }
         }
         ctx.globalAlpha = 1.0;

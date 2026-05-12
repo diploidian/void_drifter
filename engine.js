@@ -30,14 +30,21 @@ function drawGrid(ctx) {
     let startX = Math.floor(left / gridSize) * gridSize;
     let startY = Math.floor(top / gridSize) * gridSize;
 
+    let cx = GAME.camera.x;
+    let cy = GAME.camera.y;
+    let hw = cw / 2;
+    let hh = ch / 2;
+
     ctx.beginPath();
     for(let x = startX; x < right; x += gridSize) {
-        let p1 = project(x, top, 0); let p2 = project(x, bottom, 0);
-        if(p1 && p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
+        let px = (x - cx) * scale + hw;
+        ctx.moveTo(px, (top - cy) * scale + hh);
+        ctx.lineTo(px, (bottom - cy) * scale + hh);
     }
     for(let y = startY; y < bottom; y += gridSize) {
-        let p1 = project(left, y, 0); let p2 = project(right, y, 0);
-        if(p1 && p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
+        let py = (y - cy) * scale + hh;
+        ctx.moveTo((left - cx) * scale + hw, py);
+        ctx.lineTo((right - cx) * scale + hw, py);
     }
     ctx.stroke();
 }
@@ -45,6 +52,8 @@ function drawGrid(ctx) {
 /** ==========================================
  * MAIN GAME LOOP & LOGIC
  * ========================================== */
+const RENDER_LIST = [];
+ 
 function useSkill(index) {
     let skill = player.skills[index];
     
@@ -355,7 +364,8 @@ function update(dt) {
 // Map chunk discovery for minimap
 let chunkX = Math.floor(player.x / 200);
 let chunkY = Math.floor(player.y / 200);
-GAME.fowMap.set(`${chunkX},${chunkY}`, true);
+    let chunkKey = chunkX + "," + chunkY;
+    if (!GAME.fowMap.has(chunkKey)) GAME.fowMap.set(chunkKey, true);
 
 updateUI();
 }
@@ -393,12 +403,21 @@ function draw() {
     drawGrid(ctx);
 
     // Draw order: Z-sorting
-    let allRenderables = [
-        ...entities, ...drops, ...xpOrbs, ...hpOrbs, ...particles, ...projectiles, ...shockwaves, ...warpTrails,
-        { isPlayerShip: true, x: player.x, y: player.y, z: 0 }
-    ].sort((a, b) => b.z - a.z); // draw deep space first
+    RENDER_LIST.length = 0;
+    for(let i=0; i<entities.length; i++) RENDER_LIST.push(entities[i]);
+    for(let i=0; i<drops.length; i++) RENDER_LIST.push(drops[i]);
+    for(let i=0; i<xpOrbs.length; i++) RENDER_LIST.push(xpOrbs[i]);
+    for(let i=0; i<hpOrbs.length; i++) RENDER_LIST.push(hpOrbs[i]);
+    for(let i=0; i<particles.length; i++) RENDER_LIST.push(particles[i]);
+    for(let i=0; i<projectiles.length; i++) RENDER_LIST.push(projectiles[i]);
+    for(let i=0; i<shockwaves.length; i++) RENDER_LIST.push(shockwaves[i]);
+    for(let i=0; i<warpTrails.length; i++) RENDER_LIST.push(warpTrails[i]);
+    RENDER_LIST.push({ isPlayerShip: true, x: player.x, y: player.y, z: 0 });
+    
+    RENDER_LIST.sort((a, b) => b.z - a.z); // draw deep space first
 
-    for(let obj of allRenderables) {
+    for(let i=0; i<RENDER_LIST.length; i++) {
+        let obj = RENDER_LIST[i];
         if(obj.isPlayerShip) {
             let p = project(player.x, player.y, 0);
             if(p) {
@@ -570,6 +589,10 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => {
     let k = e.key.toLowerCase();
     if(GAME.keys.hasOwnProperty(k)) GAME.keys[k] = false;
+});
+window.addEventListener('blur', () => {
+    for (let k in GAME.keys) GAME.keys[k] = false;
+    GAME.mouse.left = false;
 });
 window.addEventListener('mousemove', e => {
     GAME.mouse.x = e.clientX; GAME.mouse.y = e.clientY;
