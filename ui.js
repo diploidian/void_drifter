@@ -37,6 +37,7 @@ function handleDrop(e, targetType, targetId) {
             renderInventory();
             renderEquipment();
             player.updateStats();
+    updateAugmentIcons();
         }
     } 
     // Equipment to Inventory
@@ -145,6 +146,62 @@ function confirmUpgrade(choice) {
     renderInventory();
     renderEquipment();
     updateUI();
+}
+
+function renderAugmentUI(options) {
+    let modal = document.getElementById('augment-modal');
+    let container = document.getElementById('augment-options');
+    container.innerHTML = '';
+    
+    options.forEach(opt => {
+        let btn = document.createElement('div');
+        btn.className = 'augment-card';
+        btn.innerHTML = `
+            <div class="aug-icon" style="color: ${opt.aug.color}">${opt.aug.icon}</div>
+            <div class="aug-name" style="color: ${opt.aug.color}">${opt.aug.name}</div>
+            <div class="aug-desc">${opt.aug.desc(opt.val)}</div>
+        `;
+        btn.onclick = () => selectAugment(opt.aug, opt.val);
+        container.appendChild(btn);
+    });
+    
+    modal.style.display = 'flex';
+}
+
+function selectAugment(aug, val) {
+    aug.effect(val);
+    player.augments[aug.id].count++;
+    player.augments[aug.id].totalValue += val;
+    
+    player.updateStats();
+    document.getElementById('augment-modal').style.display = 'none';
+    
+    if (player.xp < player.xpNext) GAME.state = 'PLAYING';
+    else triggerLevelUp(); // Queued level ups
+    
+    updateAugmentIcons();
+    updateUI();
+}
+
+function updateAugmentIcons() {
+    let container = document.getElementById('augments-hud');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    AUGMENT_POOL.forEach(aug => {
+        let augData = player.augments[aug.id];
+        let isActive = augData.count > 0;
+        let div = document.createElement('div');
+        div.style.cssText = `width: 24px; height: 24px; position: relative; color: ${aug.color}; opacity: ${isActive ? '1.0' : '0.2'};`;
+        div.innerHTML = aug.icon;
+        if (isActive) {
+            div.innerHTML += `<div style="position:absolute; bottom:-6px; right:-6px; font-size:10px; font-weight:bold; background:#000; border:1px solid ${aug.color}; color:#fff; border-radius:3px; padding:0 2px;">${augData.count}</div>`;
+            let tooltipDesc = `Acquired: ${augData.count}x<br>Total Bonus: <span style="color:#0f0">${aug.desc(augData.totalValue)}</span>`;
+            div.onmouseover = (e) => showTooltip(aug.name, tooltipDesc, '', e);
+            div.onmouseout = hideTooltip;
+        }
+        container.appendChild(div);
+    });
 }
 
 function updateUI() {
@@ -503,9 +560,18 @@ function showSkillTooltip(id, e) {
     let dmgSingExpStr = `${player.stats.damage.min * 2}-${player.stats.damage.max * 2}`;
 
     let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
-    let projCount = hasTriple ? 3 : 1;
-    let pbDesc = `Fires ${projCount} projectile${projCount > 1 ? 's' : ''} dealing <span style="color:#0f0">${dmgStr}</span> damage.<br>Range: 1200 units`;
-    if (hasTriple) pbDesc += `<br><span style="color:#f82">[PERK] Triple Shot Active</span>`;
+    let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
+    let pbDesc = '';
+
+    if (isTripleUpgraded) {
+        let tickRate = 0.25 / (player.stats.fireRate / 100);
+        pbDesc = `Fires a continuous energy beam dealing <span style="color:#0f0">${dmgStr}</span> damage every ${tickRate.toFixed(2)}s to the main target, and chaining to nearby enemies.<br>Range: 1200 units`;
+        pbDesc += `<br><span style="color:#ff00ff">[UPGRADED PERK] Whip Beam Active</span>`;
+    } else {
+        let projCount = hasTriple ? 3 : 1;
+        pbDesc = `Fires ${projCount} projectile${projCount > 1 ? 's' : ''} dealing <span style="color:#0f0">${dmgStr}</span> damage.<br>Range: 1200 units`;
+        if (hasTriple) pbDesc += `<br><span style="color:#f82">[PERK] Triple Shot Active</span>`;
+    }
 
     let descs = [
         pbDesc,

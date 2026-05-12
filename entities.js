@@ -384,7 +384,7 @@ class FungalNode {
         this.hp = this.maxHp;
         this.dead = false;
         this.pulseTimer = 0;
-        this.life = 45.0; // Dies naturally after 45s to avoid permanent clutter
+        this.life = 15.0; // Dies naturally after 45s to avoid permanent clutter
         this.links = []; // Connected Mycelial nodes
     }
     update(dt) {
@@ -795,7 +795,7 @@ class WhipBeam {
         this.damage = damage;
         this.color = color;
         this.z = -1; // Render on top of player
-        this.chainDamageMult = 0.5;
+        this.chainDamageMult = 0.90;
         this.dead = false;
 
         this.numNodes = 25;
@@ -804,7 +804,8 @@ class WhipBeam {
             this.nodes.push({ x: source.x, y: source.y, vx: 0, vy: 0 });
         }
 
-        this.tickTimer = 0.25;
+        let fireRateMult = player.stats.fireRate / 100;
+        this.tickTimer = 0.25 / fireRateMult;
         this.snappedEnemies = new Set();
         this.mainTarget = null;
 
@@ -820,7 +821,7 @@ class WhipBeam {
 
         // Find main target directly at cursor
         for (let e of entities) {
-            if (e instanceof Enemy && !e.dead && e.z <= 0) {
+            if (typeof e.takeDamage === 'function' && !e.dead && e.z <= 0) {
                 if (MathUtils.distance(targetX, targetY, e.x, e.y) <= 20 + e.radius) {
                     this.mainTarget = e;
                     break;
@@ -842,7 +843,7 @@ class WhipBeam {
         this.nodes[0].vx = 0;
         this.nodes[0].vy = 0;
 
-        let stiffness = 600;
+        let stiffness = 300;
         let friction = 0.70;
 
         for (let i = 1; i < this.numNodes; i++) {
@@ -852,8 +853,8 @@ class WhipBeam {
 
             if (i < this.numNodes - 1) { // Intermediate magnetic path snapping
                 for (let e of entities) {
-                    if (e instanceof Enemy && !e.dead && e.z <= 0) {
-                        if (MathUtils.distance(idealX, idealY, e.x, e.y) <= 20 + e.radius) {
+                    if (typeof e.takeDamage === 'function' && !e.dead && e.z <= 0) {
+                        if (MathUtils.distance(idealX, idealY, e.x, e.y) <= 50 + e.radius) {
                             idealX = e.x;
                             idealY = e.y;
                             this.snappedEnemies.add(e);
@@ -883,7 +884,8 @@ class WhipBeam {
         // Tick Damage & Timeout Logic
         this.tickTimer -= dt;
         if (this.tickTimer <= 0) {
-            this.tickTimer = 0.25;
+            let fireRateMult = player.stats.fireRate / 100;
+            this.tickTimer = 0.25 / fireRateMult;
             
             if (!this.mainTarget) {
                 this.pulseCount++;

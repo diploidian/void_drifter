@@ -35,6 +35,7 @@ const player = {
     xpNext: 100,
     stats: { ...BASE_STATS },
     statBreakdown: {},
+    augments: {},
     timers: { dodge: 0, shieldRegen: 0, repairis: 0, immunity: 0, mycelialDebuff: 0, dashActive: 0 },
     skills: [
         { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.25, type: 'projectile' },
@@ -67,6 +68,7 @@ const player = {
                 GAME.bossSpawned = true;
             }
             this.updateStats();
+            triggerLevelUp();
         }
         updateUI();
     },
@@ -179,3 +181,20 @@ const player = {
         updateUI();
     }
 };
+
+AUGMENT_POOL.forEach(a => {
+    player.augments[a.id] = { count: 0, totalValue: 0, ref: a };
+});
+
+function triggerLevelUp() {
+    GAME.state = 'PAUSED';
+    let options = [];
+    let pool = [...AUGMENT_POOL];
+    for (let i = 0; i < 3; i++) {
+        let idx = MathUtils.randInt(0, pool.length - 1);
+        let aug = pool.splice(idx, 1)[0];
+        let val = aug.roll();
+        options.push({ aug, val });
+    }
+    if (typeof renderAugmentUI === 'function') renderAugmentUI(options);
+}

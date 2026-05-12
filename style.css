@@ -131,6 +131,13 @@
         .upg-btn { background: rgba(0,0,0,0.5); border: 1px solid var(--border); color: white; padding: 10px; cursor: pointer; text-align: center; transition: 0.2s; font-family: 'Rajdhani'; font-size: 15px; font-weight: bold; border-radius: 4px; }
         .upg-btn:hover { border-color: var(--accent); background: rgba(0,210,255,0.2); }
 
+        /* Augment Cards */
+        .augment-card { width: 220px; height: 300px; background: rgba(10,15,25,0.9); border: 2px solid var(--border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0,0,0,0.5); text-align: center; font-family: 'Rajdhani', sans-serif; gap: 15px; }
+        .augment-card:hover { border-color: var(--accent); transform: scale(1.05); box-shadow: 0 0 20px rgba(0,210,255,0.4); }
+        .aug-icon { width: 64px; height: 64px; }
+        .aug-name { font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: bold; color: var(--text); }
+        .aug-desc { font-size: 16px; color: #aaa; }
+
         /* Game Over */
         #game-over { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 200; pointer-events: auto;}
         #game-over h1 { font-family: 'Orbitron', sans-serif; font-size: 48px; color: var(--hp); margin-bottom: 20px; }
