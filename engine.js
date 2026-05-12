@@ -168,6 +168,15 @@ function update(dt) {
         }
     }
     
+    let isThrusting = (ax !== 0 || ay !== 0);
+    if (isThrusting) {
+        player.vx += ax * player.stats.acceleration * dt;
+        player.vy += ay * player.stats.acceleration * dt;
+    } else {
+        player.vx *= player.stats.friction;
+        player.vy *= player.stats.friction;
+    }
+
     let speed = Math.hypot(player.vx, player.vy);
     if(speed > currentMaxSpeed) {
         let ratio = currentMaxSpeed / speed;
