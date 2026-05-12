@@ -14,13 +14,91 @@ let equipment = {
 
 // Base stats
 const BASE_STATS = {
-    maxHp: 100, hp: 100, armorRating: 0, damageReduction: 0,
-    maxShields: 50, shields: 50, shieldRegen: 5,
+    maxHp: 100, hp: 100, armorRating: 0, damageReduction: 0, hpRegen: 0,
+    maxShields: 50, shields: 50, shieldRegen: 5, shieldRegenPersistent: 0,
     maxEnergy: 100, energy: 100, energyRegen: 10,
-    maxFuel: 100, fuel: 100,
+    maxFuel: 100, fuel: 100, fuelEfficiency: 1.0,
     maxSpeed: 200, acceleration: 600, friction: 0.95,
     damage: { min: 9, max: 13 }, fireRate: 100, critChance: 5, critRating: 0
 };
+
+const AUGMENT_POOL = [
+    {
+        id: 'thrusterTuning', name: 'Thruster Tuning', color: '#00d2ff',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 22l10-5 10 5L12 2z"/></svg>',
+        roll: () => MathUtils.randInt(1, 4), desc: (v) => `+${v} Max Speed`,
+        effect: (v) => { BASE_STATS.maxSpeed += v; }
+    },
+    {
+        id: 'overclockedCapacitors', name: 'Overclocked Capacitors', color: '#9933ff',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+        roll: () => MathUtils.rand(0.5, 3.5), desc: (v) => `+${v.toFixed(1)} Energy Regen/sec`,
+        effect: (v) => { BASE_STATS.energyRegen += v; }
+    },
+    {
+        id: 'reinforcedCalibrations', name: 'Reinforced Calibrations', color: '#ff3366',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>',
+        roll: () => MathUtils.randInt(1, 4), desc: (v) => `+${v} Min & Max Damage`,
+        effect: (v) => { 
+            if(typeof BASE_STATS.damage === 'object') { BASE_STATS.damage.min += v; BASE_STATS.damage.max += v; }
+            else { BASE_STATS.damage += v; }
+        }
+    },
+    {
+        id: 'rapidFireRelay', name: 'Rapid-Fire Relay', color: '#ffcc00',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+        roll: () => Math.floor(10 * (1 + Math.max(0, player.level - 6) * 0.15)), desc: (v) => `+${v} Fire Rate Rating`,
+        effect: (v) => { BASE_STATS.fireRateRating = (BASE_STATS.fireRateRating || 0) + v; }
+    },
+    {
+        id: 'nanoRepairSwarm', name: 'Nano-Repair Swarm', color: '#00ff66',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
+        roll: () => MathUtils.rand(0.2, 3.2), desc: (v) => `+${v.toFixed(1)} HP Regen/sec`,
+        effect: (v) => { BASE_STATS.hpRegen += v; }
+    },
+    {
+        id: 'fuelAtomizer', name: 'Fuel Atomizer', color: '#ffcc00',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 4.2c1.88 1.4 3.34 3.73 3.34 6.11 0 4.97-4.03 9-9 9s-9-4.03-9-9c0-2.38 1.46-4.71 3.34-6.11L12 2.69z"/></svg>',
+        roll: () => MathUtils.rand(0.1, 0.4), desc: (v) => `-${(v*100).toFixed(0)}% Fuel Consumption`,
+        effect: (v) => { BASE_STATS.fuelEfficiency -= v; }
+    },
+    {
+        id: 'persistentShieldLink', name: 'Persistent Shield Link', color: '#33ccff',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+        roll: () => MathUtils.rand(0.1, 3.1), desc: (v) => `+${v.toFixed(1)} Shield Regen/sec (Always Active)`,
+        effect: (v) => { BASE_STATS.shieldRegenPersistent += v; }
+    },
+    {
+        id: 'kineticDampeners', name: 'Kinetic Dampeners', color: '#aaaaaa',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
+        roll: () => Math.floor(10 * (1 + Math.max(0, player.level - 6) * 0.15)), desc: (v) => `+${v} Armor Rating`,
+        effect: (v) => { BASE_STATS.armorRating += v; } 
+    },
+    {
+        id: 'targetingComputer', name: 'Targeting Computer', color: '#ff3366',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+        roll: () => Math.floor(10 * (1 + Math.max(0, player.level - 6) * 0.15)), desc: (v) => `+${v} Crit Rating`,
+        effect: (v) => { BASE_STATS.critRating += v; }
+    },
+    {
+        id: 'auxiliaryBattery', name: 'Auxiliary Battery', color: '#9933ff',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2" ry="2"/><line x1="22" y1="11" x2="22" y2="13"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/></svg>',
+        roll: () => MathUtils.randInt(5, 8), desc: (v) => `+${v} Max Energy`,
+        effect: (v) => { BASE_STATS.maxEnergy += v; }
+    },
+    {
+        id: 'emergencySiphon', name: 'Emergency Siphon', color: '#33ccff',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+        roll: () => MathUtils.randInt(5, 8), desc: (v) => `+${v} Max Shields`,
+        effect: (v) => { BASE_STATS.maxShields += v; }
+    },
+    {
+        id: 'structuralIntegrity', name: 'Structural Integrity', color: '#ff3366',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+        roll: () => MathUtils.randInt(5, 8), desc: (v) => `+${v} Max HP`,
+        effect: (v) => { BASE_STATS.maxHp += v; }
+    }
+];
 
 const player = {
     x: 0, y: 0, z: 0,
