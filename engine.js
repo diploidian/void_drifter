@@ -95,7 +95,7 @@ function useSkill(index) {
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
-            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/laserSmall_004.ogg');
+            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sandbox/sounds/laserSmall_004.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
