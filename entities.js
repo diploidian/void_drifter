@@ -494,7 +494,15 @@ class MycelialSpreader extends Enemy {
         this.currentNetworkId = null;
     }
     update(dt) {
-        if(super.update(dt)) return true; // Spawning or stun handling from superclass
+        if(this.z > 0) {
+            this.z += this.vz * dt;
+            if(this.z <= 0) { this.z = 0; this.vz = 0; }
+            return false;
+        }
+        if (this.stunTimer > 0) {
+            this.stunTimer -= dt;
+            return false;
+        }
         if (this.dead) return true;
         
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
