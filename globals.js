@@ -67,7 +67,7 @@ function isPointInPolygon(point, polygon) {
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
         let xi = polygon[i].x, yi = polygon[i].y;
         let xj = polygon[j].x, yj = polygon[j].y;
-        let intersect = ((yi > y) !== (yj > y)) && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+        let intersect = ((yi > point.y) !== (yj > point.y)) && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
         if (intersect) inside = !inside;
     }
     return inside;
