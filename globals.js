@@ -16,6 +16,63 @@ const MathUtils = {
     }
 };
 
+const DSU = {
+    parent: new Map(),
+    init(nodes) {
+        this.parent.clear();
+        nodes.forEach(node => this.parent.set(node, node));
+    },
+    find(node) {
+        if (!this.parent.has(node)) return null;
+        if (this.parent.get(node) === node) {
+            return node;
+        }
+        const root = this.find(this.parent.get(node));
+        this.parent.set(node, root);
+        return root;
+    },
+    union(nodeA, nodeB) {
+        const rootA = this.find(nodeA);
+        const rootB = this.find(nodeB);
+        if (rootA !== rootB) {
+            this.parent.set(rootB, rootA);
+        }
+    }
+};
+
+function findPath(startNode, endNode, adj) {
+    const queue = [[startNode]];
+    const visited = new Set([startNode]);
+
+    while (queue.length > 0) {
+        const path = queue.shift();
+        const node = path[path.length - 1];
+
+        if (node === endNode) return path;
+
+        const neighbors = adj.get(node) || [];
+        for (const neighbor of neighbors) {
+            if (!visited.has(neighbor)) {
+                visited.add(neighbor);
+                const newPath = [...path, neighbor];
+                queue.push(newPath);
+            }
+        }
+    }
+    return null;
+}
+
+function isPointInPolygon(point, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        let xi = polygon[i].x, yi = polygon[i].y;
+        let xj = polygon[j].x, yj = polygon[j].y;
+        let intersect = ((yi > y) !== (yj > y)) && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
 function getDamage(source) {
     let dmg = source.stats ? source.stats.damage : source.damage;
     if (typeof dmg === 'object') {
@@ -119,5 +176,6 @@ let xpOrbs = [];
 let hpOrbs = [];
 let shockwaves = [];
 let warpTrails = [];
+let mycelialLoops = [];
 
 const HP_ORB_DROP_RATE = 0.10;

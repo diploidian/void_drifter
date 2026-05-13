@@ -53,6 +53,42 @@ function drawGrid(ctx) {
  * MAIN GAME LOOP & LOGIC
  * ========================================== */
 const RENDER_LIST = [];
+
+function updateMycelialNetwork() {
+    mycelialLoops = [];
+    const nodes = entities.filter(e => e instanceof FungalNode && !e.dead);
+    if (nodes.length < 3) return;
+
+    const adj = new Map();
+    nodes.forEach(node => adj.set(node, []));
+    
+    const potentialLinks = [];
+    for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+            if (MathUtils.distance(nodes[i].x, nodes[i].y, nodes[j].x, nodes[j].y) <= 400) {
+                potentialLinks.push([nodes[i], nodes[j]]);
+            }
+        }
+    }
+    
+    // Sort by distance to find the smallest loops first
+    potentialLinks.sort((a, b) => 
+        MathUtils.distance(a[0].x, a[0].y, a[1].x, a[1].y) - 
+        MathUtils.distance(b[0].x, b[0].y, b[1].x, b[1].y)
+    );
+
+    DSU.init(nodes);
+    for (const [nodeA, nodeB] of potentialLinks) {
+        if (DSU.find(nodeA) === DSU.find(nodeB)) {
+            const path = findPath(nodeA, nodeB, adj);
+            if (path) mycelialLoops.push(path);
+        } else {
+            DSU.union(nodeA, nodeB);
+            adj.get(nodeA).push(nodeB);
+            adj.get(nodeB).push(nodeA);
+        }
+    }
+}
  
 function useSkill(index) {
     let skill = player.skills[index];
@@ -86,11 +122,11 @@ function useSkill(index) {
         
         if (isTripleUpgraded) {
             if (!player.activeWhipBeam) {
-                playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/laserLarge_001.ogg');
+                playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/laserLarge_001.ogg');
                 player.activeWhipBeam = new WhipBeam(player, getDamage(player), varColor('--accent'));
             }
         } else if (hasTriple) {
-            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/laserLarge_001.ogg');
+            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/laserLarge_001.ogg');
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
@@ -100,7 +136,7 @@ function useSkill(index) {
         }
     } 
     else if(index === 1) { // EMP
-        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/spaceEngine_002.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/spaceEngine_002.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
@@ -111,7 +147,7 @@ function useSkill(index) {
         }
     }
     else if(index === 2) { // Warp Dash
-        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/doorOpen_002.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/doorOpen_002.ogg');
         // Reduced 40% (500 -> 300)
         let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
         let oldX = player.x, oldY = player.y;
@@ -125,7 +161,7 @@ function useSkill(index) {
         warpTrails.push(new WarpTrail(blastStartX, blastStartY, player.x, player.y, 170, 0.75, varColor('--energy')));
     }
     else if(index === 3) { // Singularity
-        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/engineCircular_000.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/engineCircular_000.ogg');
         player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
         entities.push(player.activeSingularity);
     }
@@ -179,6 +215,17 @@ function update(dt) {
         }
     }
     
+    // Mycelial Cloud Slow
+    if (player.timers.inMycelialCloud > 0) {
+        const slowProgress = player.timers.inMycelialCloud / 2.0; // 0 to 1
+        const speedMultiplier = 1.0 - (0.9 * slowProgress); // 1.0 down to 0.1
+        currentMaxSpeed *= speedMultiplier;
+
+        if(Math.random() < dt * 20) { // More intense particle effect
+            createParticles(player.x + MathUtils.rand(-20, 20), player.y + MathUtils.rand(-20, 20), 0, 1, 'rgba(153, 255, 51, 0.8)', 1.5);
+        }
+    }
+
     let isThrusting = (ax !== 0 || ay !== 0);
     if (isThrusting) {
         player.vx += ax * player.stats.acceleration * dt;
@@ -297,7 +344,7 @@ function update(dt) {
     } else {
         player.timers.shieldRegen -= dt;
         if(player.timers.shieldRegen <= 0 && player.stats.shields < player.stats.maxShields) {
-            playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/forceField_002.ogg');
+            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/forceField_002.ogg');
         }
     }
 
@@ -339,6 +386,8 @@ function update(dt) {
         if(floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
     }
 
+    updateMycelialNetwork();
+
     // Enemy Spawning
     // baseXP sum is mathematically 50 * n * (n-1)
     let baseXP = 50 * player.level * (player.level - 1);
@@ -357,6 +406,24 @@ function update(dt) {
 
     let progress = MathUtils.clamp((totalXP - startXP) / Math.max(1, targetXP - startXP), 0, 1.5);
     let spawnRate = 0.5 + 0.5 * Math.pow(progress, 2); // Exponential curve
+
+    // Mycelial Cloud Debuff Logic
+    let isInsideLoop = false;
+    if (mycelialLoops.length > 0) {
+        for (const loop of mycelialLoops) {
+            if (isPointInPolygon({x: player.x, y: player.y}, loop)) {
+                isInsideLoop = true;
+                break;
+            }
+        }
+    }
+    if (isInsideLoop) {
+        player.timers.inMycelialCloud = Math.min(2.0, (player.timers.inMycelialCloud || 0) + dt);
+        player.stats.shields -= player.stats.maxShields * 0.01 * dt;
+        if (player.stats.shields < 0) player.stats.shields = 0;
+    } else {
+        player.timers.inMycelialCloud = Math.max(0, (player.timers.inMycelialCloud || 0) - dt);
+    }
 
     if (typeof devSettings !== 'undefined') spawnRate *= devSettings.spawnRateMult;
     if (!GAME.activeBoss && Math.random() < dt * spawnRate) {
@@ -414,6 +481,33 @@ function draw() {
     }
 
     drawGrid(ctx);
+
+    // Draw Mycelial Clouds
+    ctx.fillStyle = 'rgba(153, 255, 51, 0.1)';
+    ctx.strokeStyle = 'rgba(153, 255, 51, 0.2)';
+    ctx.lineWidth = 1;
+    for (const loop of mycelialLoops) {
+        if (loop.length < 3) continue;
+        
+        let p0 = project(loop[0].x, loop[0].y, 0);
+        if (!p0) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < loop.length; i++) {
+            let p = project(loop[i].x, loop[i].y, 0);
+            if (p) ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Gaseous particles
+        if (Math.random() < 0.1) {
+            let node = loop[MathUtils.randInt(0, loop.length - 1)];
+            createParticles(node.x + MathUtils.rand(-200, 200), node.y + MathUtils.rand(-200, 200), 0, 1, 'rgba(153, 255, 51, 0.4)', 3.0);
+        }
+    }
 
     // Draw order: Z-sorting
     RENDER_LIST.length = 0;
@@ -627,7 +721,7 @@ window.addEventListener('wheel', e => {
 function useFuelCell() {
     let idx = inventory.findIndex(i => i && i.type === 'Fuel');
     if (idx !== -1) {
-        playSound('https://cdn.jsdelivr.net/gh/diploidian/void_drifter@5f2015f/sounds/impactMetal_004.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/impactMetal_004.ogg');
         let item = inventory[idx];
         let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
