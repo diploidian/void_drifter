@@ -66,7 +66,9 @@ function updateMycelialNetwork() {
     for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
             if (MathUtils.distance(nodes[i].x, nodes[i].y, nodes[j].x, nodes[j].y) <= 400) {
-                potentialLinks.push([nodes[i], nodes[j]]);
+                if (nodes[i].networkId === null || nodes[j].networkId === null || nodes[i].networkId === nodes[j].networkId) {
+                    potentialLinks.push([nodes[i], nodes[j]]);
+                }
             }
         }
     }

@@ -376,7 +376,7 @@ class Enemy {
 }
 
 class FungalNode {
-    constructor(x, y, level) {
+    constructor(x, y, level, networkId = null) {
         this.x = x; this.y = y; this.z = 0;
         this.level = level;
         this.radius = 12;
@@ -384,7 +384,9 @@ class FungalNode {
         this.hp = this.maxHp;
         this.dead = false;
         this.pulseTimer = 0;
-        this.life = 15.0; // Dies naturally after 45s to avoid permanent clutter
+        this.networkId = networkId;
+        // If part of a structured network, live indefinitely until replaced by Spreader
+        this.life = networkId !== null ? 999999 : 15.0; 
         this.links = []; // Connected Mycelial nodes
     }
     update(dt) {
@@ -403,7 +405,9 @@ class FungalNode {
         for (let e of entities) {
             if (e instanceof FungalNode && e !== this && !e.dead) {
                 if (MathUtils.distance(this.x, this.y, e.x, e.y) <= 400) {
-                    this.links.push(e);
+                    if (this.networkId === null || e.networkId === null || this.networkId === e.networkId) {
+                        this.links.push(e);
+                    }
                 }
             }
         }
@@ -470,7 +474,7 @@ class MycelialSpreader extends Enemy {
         this.radius = 20;
         this.type = 'spreader';
         this.color = '#af8123'; // Baby Shit Brown
-        this.speed = 100 + this.level * 1.5;
+        this.speed = 150 + this.level * 1.5;
         this.maxHp = 100 * (1 + (this.level - 1) * 0.3);
         this.hp = this.maxHp;
         
@@ -479,31 +483,21 @@ class MycelialSpreader extends Enemy {
         this.spreaderDamageMult = 1.0;
         this.damage = this.baseDamage * (1 + (this.level - 1) * this.damageScale);
         
-        this.nodeTimer = 2.0; 
         this.attackTimer = 0;
+        
+        // Network properties
+        this.networks = []; 
+        this.currentNetwork = [];
+        this.targetPoints = [];
+        this.networkPhase = 'IDLE'; 
+        this.networkCounter = 0;
+        this.currentNetworkId = null;
     }
     update(dt) {
         if(super.update(dt)) return true; // Spawning or stun handling from superclass
         if (this.dead) return true;
         
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
-        let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
-        
-        // Spreader evades the player and attempts to circle around at mid-range
-        let targetDist = 600;
-        if (dist > targetDist + 50) {
-            this.vx = Math.cos(angle) * this.speed;
-            this.vy = Math.sin(angle) * this.speed;
-        } else if (dist < targetDist - 50) {
-            this.vx = -Math.cos(angle) * this.speed;
-            this.vy = -Math.sin(angle) * this.speed;
-        } else {
-            this.vx = Math.cos(angle + Math.PI/2) * this.speed * 0.5;
-            this.vy = Math.sin(angle + Math.PI/2) * this.speed * 0.5;
-        }
-        
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
         
         if (this.attackTimer > 0) this.attackTimer -= dt;
         if (dist < this.radius + player.radius && this.attackTimer <= 0) {
@@ -511,10 +505,83 @@ class MycelialSpreader extends Enemy {
             this.attackTimer = 1.0;
         }
         
-        this.nodeTimer -= dt;
-        if (this.nodeTimer <= 0) {
-            entities.push(new FungalNode(this.x, this.y, this.level));
-            this.nodeTimer = 5.0; // Every 5 seconds it drops a new fungal node
+        if (this.networkPhase === 'IDLE') {
+            if (this.currentNetwork.length > 0) {
+                this.networks.push(this.currentNetwork);
+                this.currentNetwork = [];
+            }
+            
+            this.currentNetworkId = this.x + '_' + this.y + '_' + (this.networkCounter++);
+            
+            // Pick a new center away from current position
+            let angle = Math.random() * Math.PI * 2;
+            let centerDist = MathUtils.rand(600, 1000); 
+            let cx = this.x + Math.cos(angle) * centerDist;
+            let cy = this.y + Math.sin(angle) * centerDist;
+            
+            cx = MathUtils.clamp(cx, -WORLD_SIZE + 600, WORLD_SIZE - 600);
+            cy = MathUtils.clamp(cy, -WORLD_SIZE + 600, WORLD_SIZE - 600);
+
+            // N = 3 to 8 nodes to cover a massive physical space
+            let N = MathUtils.randInt(3, 8);
+            let sideLength = MathUtils.rand(300, 380); // Limits edge length strictly below 400
+            let radius = sideLength / (2 * Math.sin(Math.PI / N));
+
+            let startAngle = Math.random() * Math.PI * 2;
+            this.targetPoints = [];
+            for(let i=0; i<N; i++) {
+                let a = startAngle + i * (Math.PI * 2 / N);
+                this.targetPoints.push({
+                    x: cx + Math.cos(a) * radius,
+                    y: cy + Math.sin(a) * radius
+                });
+            }
+            this.networkPhase = 'TRANSIT';
+        }
+
+        if (this.networkPhase === 'TRANSIT' || this.networkPhase === 'BUILDING') {
+            if (this.targetPoints.length === 0) {
+                this.networkPhase = 'IDLE';
+                return false;
+            }
+
+            let target = this.targetPoints[0];
+            let tDist = MathUtils.distance(this.x, this.y, target.x, target.y);
+            
+            if (tDist < 15) {
+                let node = new FungalNode(this.x, this.y, this.level, this.currentNetworkId);
+                entities.push(node);
+                this.currentNetwork.push(node);
+
+                // A spreader maintains a max of 3 completed networks. Destroys oldest node.
+                if (this.networks.length >= 3) {
+                    let oldestNet = this.networks[0];
+                    while (oldestNet.length > 0) {
+                        let oldNode = oldestNet.shift();
+                        if (!oldNode.dead) {
+                            oldNode.dead = true;
+                            createParticles(oldNode.x, oldNode.y, 0, 20, '#99ff33');
+                            break; 
+                        }
+                    }
+                    if (oldestNet.length === 0) {
+                        this.networks.shift();
+                    }
+                }
+
+                this.targetPoints.shift();
+                if (this.targetPoints.length > 0) {
+                    this.networkPhase = 'BUILDING';
+                } else {
+                    this.networkPhase = 'IDLE';
+                }
+            } else {
+                let moveAngle = MathUtils.angle(this.x, this.y, target.x, target.y);
+                this.vx = Math.cos(moveAngle) * this.speed;
+                this.vy = Math.sin(moveAngle) * this.speed;
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+            }
         }
     }
     draw(ctx) {
