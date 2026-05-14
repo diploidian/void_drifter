@@ -72,7 +72,9 @@
             setMessage('Set window.VOID_DRIFTER_API_URL or localStorage void_drifter_api_url first.');
             return;
         }
-        window.location.href = `${apiUrl}/auth/microsoft/login`;
+        const loginUrl = new URL(`${apiUrl}/auth/microsoft/login`);
+        loginUrl.searchParams.set('return_to', window.location.href);
+        window.location.href = loginUrl.toString();
     });
 
     logoutBtn.addEventListener('click', async () => {
