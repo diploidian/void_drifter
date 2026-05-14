@@ -69,15 +69,17 @@ window.addEventListener('resize', () => {
 });
 
 const AUDIO_CACHE = {};
+const SOUND_CDN_PREFIX = 'https://cdn.jsdelivr.net/gh/diploidian/void_drifter@main/';
 function playSound(file, volume = 0.5) {
-    if(!AUDIO_CACHE[file]) {
-        let newAudio = new Audio(file)
-        newAudio.crossOrigin = "anonymous";
-        AUDIO_CACHE[file] = new Audio(file);
+    const source = file.startsWith(SOUND_CDN_PREFIX) ? file.slice(SOUND_CDN_PREFIX.length) : file;
+    if(!AUDIO_CACHE[source]) {
+        AUDIO_CACHE[source] = new Audio(source);
     }
-    let audio = AUDIO_CACHE[file].cloneNode();
+    let audio = AUDIO_CACHE[source].cloneNode();
     audio.volume = volume;
-    audio.play().catch(e => {}); // Catch play-prevention to avoid error spam
+    audio.play().catch(e => {
+        if (e.name !== 'NotAllowedError') console.warn('Sound playback failed:', source, e);
+    });
 }
 
 /** ==========================================
