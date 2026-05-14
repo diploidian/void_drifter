@@ -151,6 +151,7 @@ class Enemy {
         this.attackTimer = 0;
         this.stunTimer = 0;
         this.type = Math.random() < 0.7 ? 'chaser' : 'shooter';
+        this.baseXp = this.type === 'chaser' ? 5 : 8;
         if (this.type === 'chaser') {
             this.speed *= 0.8;
             this.attackCombo = 0;
@@ -336,6 +337,8 @@ class Enemy {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
+            player.totalKills++;
+            player.killsThisLevel++;
 
             let isNormalFlak = source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies';
             let isChainedFlak = source.isFlak && source.upgradedFlak;
@@ -359,14 +362,14 @@ class Enemy {
             }
 
             // Drop XP Orbs
-            let totalXp = 5 * this.level;
+            let totalXp = this.baseXp * this.level;
             let numOrbs = MathUtils.randInt(3, 5);
             let xpPerOrb = totalXp / numOrbs;
             for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb));
             
             if (equipment['Reactor'] && equipment['Reactor'].upgradedPerk) {
                 let bonusOrbs = MathUtils.randInt(3, 5);
-                for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.2, true));
+                for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.05, true));
             }
             
             return true;
@@ -380,6 +383,7 @@ class FungalNode {
         this.x = x; this.y = y; this.z = 0;
         this.level = level;
         this.radius = 12;
+        this.baseXp = 2;
         this.maxHp = 25 * level;
         this.hp = this.maxHp;
         this.dead = false;
@@ -473,6 +477,7 @@ class MycelialSpreader extends Enemy {
         super(x, y);
         this.radius = 20;
         this.type = 'spreader';
+        this.baseXp = 3;
         this.color = '#af8123'; // Baby Shit Brown
         this.speed = 150 + this.level * 1.5;
         this.maxHp = 100 * (1 + (this.level - 1) * 0.3);
@@ -617,6 +622,7 @@ class BrutalistMonolith extends Asteroid {
         super(x, y, 35); // Fixed 35 radius for precision trap
         this.vx = 0; 
         this.vy = 0; 
+        this.baseXp = 2;
         this.rotSpeed = 0;
         this.maxHp = 20 * level; // Low HP scale
         this.hp = this.maxHp;
@@ -710,6 +716,7 @@ class MonolithArchitect extends Enemy {
         super(x, y);
         this.radius = 25;
         this.type = 'architect';
+        this.baseXp = 12;
         this.color = '#778899';
         this.speed = 60 + this.level * 1.5;
         this.maxHp = 250 * (1 + (this.level - 1) * 0.4);
@@ -1219,7 +1226,7 @@ class Boss extends Enemy {
         this.abilities = [
             { name: 'charge', cd: 0, maxCd: 8.0, active: false, duration: 0 },
             { name: 'barrage', cd: 3, maxCd: 10.0, active: false, shotsFired: 0, shotTimer: 0, currentAngle: 0 },
-            { name: 'missile', cd: 6, maxCd: 15.0 }
+            { name: 'missile', cd: 6, maxCd: 9.0 }
         ];
     }
 
@@ -1323,14 +1330,14 @@ class Boss extends Enemy {
             GAME.activeBoss = null;
             GAME.bossDefeated = true;
             // Big loot explosion
-            let totalXp = 500 * this.level;
+            let totalXp = Math.pow((100 * this.level), 1.2);
             let numOrbs = 50;
             let xpPerOrb = totalXp / numOrbs;
             for(let i=0; i<numOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb));
             
             if (equipment['Reactor'] && equipment['Reactor'].upgradedPerk) {
                 let bonusOrbs = MathUtils.randInt(3, 5);
-                for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.2, true));
+                for(let i=0; i<bonusOrbs; i++) xpOrbs.push(new XpOrb(this.x, this.y, xpPerOrb * 1.1, true));
             }
 
             for(let i=0; i<10; i++) spawnDrop(this.x, this.y, true);
@@ -1349,100 +1356,137 @@ class Boss extends Enemy {
 
 class Singularity {
     constructor(x, y, targetX, targetY) {
-        this.x = x; this.y = y; this.z = 0;
-        let angle = MathUtils.angle(x, y, targetX, targetY);
-        this.vx = Math.cos(angle) * 400;
-        this.vy = Math.sin(angle) * 400;
-        this.targetX = targetX; this.targetY = targetY;
-        this.state = 'moving'; // moving, blackhole
-        this.timer = 3.0; // blackhole duration
-        this.radius = 0;
-        this.tickTimer = 0;
-        this.tickDamageMult = 0.35;
-        this.explosionDamageMult = 2.0;
+        this.x = targetX; this.y = targetY; this.z = 0;
+        this.state = 'GROWING';
+        this.timer = 1.0;
+        this.currentRadius = 100;
+        this.maxRadius = 400;
+        this.capturedColors = new Set();
     }
     update(dt) {
-        if (this.state === 'moving') {
-            this.x += this.vx * dt; this.y += this.vy * dt;
-            createParticles(this.x, this.y, 0, 2, '#9933ff');
-            if (MathUtils.distance(this.x, this.y, this.targetX, this.targetY) < 10) {
-                this.state = 'blackhole';
-                this.vx = 0; this.vy = 0;
-            }
-        } else {
+        if (this.state === 'GROWING') {
             this.timer -= dt;
-            this.radius = Math.min(150, this.radius + 200*dt); // expand pull radius
-            
-            // Suck entities
-            for(let e of entities) {
-                if (e === this) continue;
-                let d = MathUtils.distance(this.x, this.y, e.x, e.y);
-                if (d < this.radius && e.z <= 0) {
-                    let ang = MathUtils.angle(e.x, e.y, this.x, this.y);
-                    let pull = (this.radius - d) * 2;
-                    e.x += Math.cos(ang) * pull * dt;
-                    e.y += Math.sin(ang) * pull * dt;
-                }
-            }
-            
-            // Tick Damage
-            this.tickTimer -= dt;
-            if (this.tickTimer <= 0) {
-                this.tickTimer = 0.25;
-                for(let e of entities) {
-                    if (e instanceof Enemy && !e.dead && e.z <= 0 && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        e.takeDamage(getDamage(player) * this.tickDamageMult, player, '#9933ff');
-                    }
-                }
-            }
-
-            // Sucks drops too
-            for(let d of drops) {
-                let dist = MathUtils.distance(this.x, this.y, d.x, d.y);
-                if (dist < this.radius) {
-                    let ang = MathUtils.angle(d.x, d.y, this.x, this.y);
-                    d.x += Math.cos(ang) * 200 * dt;
-                    d.y += Math.sin(ang) * 200 * dt;
-                }
-            }
-            
-            if(Math.random() < 0.2) createParticles(this.x + MathUtils.rand(-50,50), this.y + MathUtils.rand(-50,50), 0, 1, '#000', 1.0);
-
+            let progress = 1 - (Math.max(0, this.timer) / 1.0);
+            this.currentRadius = 100 + (this.maxRadius - 100) * Math.pow(progress, 2);
+            this.applyGravity(dt);
             if (this.timer <= 0) {
-                // Explode
-                createParticles(this.x, this.y, 0, 100, '#9933ff');
-                for(let e of entities) {
-                    if (!e.dead && (e instanceof Enemy || e instanceof Asteroid) && MathUtils.distance(this.x, this.y, e.x, e.y) < this.radius) {
-                        e.takeDamage(getDamage(player) * this.explosionDamageMult, player, '#9933ff');
-                    }
-                }
-                if (player.activeSingularity === this) {
-                    player.activeSingularity = null;
-                    player.skills[3].cd = player.skills[3].maxCd; // start cd normally if detonate organically
-                }
+                this.state = 'CHARGING';
+                this.timer = 1.5;
+            }
+        } else if (this.state === 'CHARGING') {
+            this.timer -= dt;
+            this.currentRadius = this.maxRadius;
+            this.applyGravity(dt);
+            
+            // Vacuum particles
+            if (Math.random() < 0.8) {
+                let angle = Math.random() * Math.PI * 2;
+                let dist = MathUtils.rand(100, this.maxRadius);
+                let px = this.x + Math.cos(angle) * dist;
+                let py = this.y + Math.sin(angle) * dist;
+                let p = new Particle(px, py, 0, '#fff', 0.5);
+                p.vx = -Math.cos(angle) * (dist / 0.5); 
+                p.vy = -Math.sin(angle) * (dist / 0.5);
+                particles.push(p);
+            }
+            
+            if (this.timer <= 0) {
+                this.explode();
                 return true;
             }
         }
         return false;
     }
+
+    applyGravity(dt) {
+        for (let e of entities) {
+            if (e === this || e.dead || e.z > 0) continue;
+            let dist = MathUtils.distance(this.x, this.y, e.x, e.y);
+            if (dist < this.currentRadius) {
+                if (e instanceof Enemy) {
+                    e.blackHole = this;
+                    this.capturedColors.add(e.color);
+                }
+                let normalizedDist = Math.max(0, 1 - (dist / this.currentRadius));
+                let pullVelocity = Math.pow(normalizedDist, 3) * 2500 * dt;
+                
+                if (pullVelocity >= dist) {
+                    e.x = this.x; e.y = this.y;
+                } else {
+                    let angle = MathUtils.angle(e.x, e.y, this.x, this.y);
+                    e.x += Math.cos(angle) * pullVelocity;
+                    e.y += Math.sin(angle) * pullVelocity;
+                }
+            } else if (e instanceof Enemy && e.blackHole === this) {
+                e.blackHole = null; // Escaped
+            }
+        }
+        
+        for(let d of drops) {
+            let dist = MathUtils.distance(this.x, this.y, d.x, d.y);
+            if (dist < this.currentRadius) {
+                let normalizedDist = Math.max(0, 1 - (dist / this.currentRadius));
+                let pullVelocity = Math.pow(normalizedDist, 3) * 2000 * dt;
+                if (pullVelocity >= dist) {
+                    d.x = this.x; d.y = this.y;
+                } else {
+                    let angle = MathUtils.angle(d.x, d.y, this.x, this.y);
+                    d.x += Math.cos(angle) * pullVelocity;
+                    d.y += Math.sin(angle) * pullVelocity;
+                }
+            }
+        }
+    }
+
+    explode() {
+        let colors = Array.from(this.capturedColors);
+        if (colors.length === 0) colors = ['#9933ff']; 
+
+        for (let i = 0; i < 100; i++) {
+            createParticles(this.x, this.y, 0, 1, colors[MathUtils.randInt(0, colors.length - 1)], 1.5);
+        }
+        shockwaves.push(new Shockwave(this.x, this.y, 0, colors[0], this.maxRadius));
+
+        for (let e of entities) {
+            if (e.blackHole === this || (e instanceof Enemy && MathUtils.distance(this.x, this.y, e.x, e.y) < this.maxRadius)) {
+                e.blackHole = null;
+                e.confused = 2.0;
+                
+                e.x = this.x + MathUtils.rand(-10, 10);
+                e.y = this.y + MathUtils.rand(-10, 10);
+
+                if (typeof e.takeDamage === 'function') {
+                    let fauxSource = { stats: { ...player.stats, critChance: 50 } };
+                    let dmg = getDamage(fauxSource) * 2; 
+                    e.takeDamage(dmg, fauxSource, colors[MathUtils.randInt(0, colors.length - 1)]);
+                }
+            }
+        }
+        
+        if (player.activeSingularity === this) {
+            player.activeSingularity = null;
+            player.skills[3].cd = player.skills[3].maxCd; 
+        }
+    }
+
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
         if(!p) return;
         let s = getScale(this.z);
         
-        if (this.state === 'moving') {
-            ctx.fillStyle = '#9933ff';
-            ctx.beginPath(); ctx.arc(p.x, p.y, 5*s, 0, Math.PI*2); ctx.fill();
-        } else {
-            ctx.fillStyle = '#9933ff';
-            ctx.strokeStyle = '#9933ff';
-            ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(p.x, p.y, (this.radius/3)*s, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            
-            // Event horizon
-            ctx.strokeStyle = `rgba(153, 51, 255, ${Math.random()})`;
-            ctx.beginPath(); ctx.arc(p.x, p.y, this.radius*s, 0, Math.PI*2); ctx.stroke();
+        let tremorX = 0, tremorY = 0;
+        if (this.state === 'CHARGING') {
+            tremorX = MathUtils.rand(-5, 5) * s;
+            tremorY = MathUtils.rand(-5, 5) * s;
         }
+
+        ctx.fillStyle = 'rgba(0, 0, 0, .8)';
+        ctx.strokeStyle = '#9933ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(p.x + tremorX, p.y + tremorY, (this.currentRadius/3)*s, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        
+        ctx.strokeStyle = `rgba(153, 51, 255, ${Math.random()})`;
+        ctx.beginPath(); ctx.arc(p.x + tremorX, p.y + tremorY, this.currentRadius*s, 0, Math.PI*2); ctx.stroke();
     }
 }
 
@@ -1455,28 +1499,28 @@ class WarpTrail {
         this.color = color;
         this.life = 1.5;
         this.maxLife = 1.5;
-        this.dx = x2 - x1;
-        this.dy = y2 - y1;
-        this.len = Math.hypot(this.dx, this.dy);
+        this.dx = x1 - x2;
+        this.dy = y1 - y2;
+        this.len = Math.hypot(this.dx, this.dy) * 1.5;
         this.angle = Math.atan2(this.dy, this.dx);
         this.tickTimer = 0;
-        this.tickDamageMult = 0.4;
+        this.tickDamageMult = 0.8;
     }
     update(dt) {
         this.life -= dt;
         
         // Spawn lightning particles
         if (this.len > 0) {
-            let spawnCount = Math.floor(this.len / 50); 
+            let spawnCount = Math.floor(this.len / 20); 
             for (let i = 0; i < spawnCount; i++) {
                 if (Math.random() < dt * 15) {
                     let t = Math.random();
-                    let r = t * this.len;
+                    let r = t * this.len * 1.2;
                     let a = this.angle + MathUtils.rand(-Math.PI / 12, Math.PI / 12);
-                    let px = this.x1 + Math.cos(a) * r;
-                    let py = this.y1 + Math.sin(a) * r;
-                    let colors = ['#ff00ff', '#ff66ff', '#cc00ff'];
-                    particles.push(new Particle(px, py, 0, colors[MathUtils.randInt(0, 2)], MathUtils.rand(0.1, 0.3), 'lightning'));
+                    let px = this.x2 + Math.cos(a) * r;
+                    let py = this.y2 + Math.sin(a) * r;
+                    let colors = ['rgba(255, 0, 255, 0.5)', 'rgba(255, 137, 255, 0.8)', 'rgba(188, 59, 115, 0.93)'];
+                    particles.push(new Particle(px, py, 0, colors[MathUtils.randInt(0, 2)], MathUtils.rand(0.2, 0.4), 'lightning'));
                 }
             }
         }
@@ -1485,13 +1529,13 @@ class WarpTrail {
         if (this.len > 0 && this.tickTimer <= 0) {
             let fireRateMult = player.stats.fireRate / 100;
             this.tickTimer = this.tickDamageMult / fireRateMult;
-            let halfAngle = Math.PI / 12; // 15 degrees
+            let halfAngle = Math.PI / 8; // 22.5 degrees
             for (let i = entities.length - 1; i >= 0; i--) {
                 let e = entities[i];
                 if (e instanceof Enemy && !e.dead && e.z <= 0) {
-                    let dist = MathUtils.distance(this.x1, this.y1, e.x, e.y);
+                    let dist = MathUtils.distance(this.x2, this.y2, e.x, e.y);
                     if (dist <= this.len + e.radius) {
-                        let eAngle = MathUtils.angle(this.x1, this.y1, e.x, e.y);
+                        let eAngle = MathUtils.angle(this.x2, this.y2, e.x, e.y);
                         let diff = eAngle - this.angle;
                         while (diff < -Math.PI) diff += Math.PI * 2;
                         while (diff > Math.PI) diff -= Math.PI * 2;
@@ -1595,7 +1639,7 @@ class XpOrb {
         
         // Magnetize to player
         let xpMult = (equipment['Reactor'] && equipment['Reactor'].perk === 'XP Boost') ? 1.15 : 1.0;
-        if (dist < 250 * xpMult) { 
+        if (dist < 150 * xpMult) { 
             let angle = MathUtils.angle(this.x, this.y, player.x, player.y);
             let pullSpeed = 500 - dist; 
             this.vx = Math.cos(angle) * pullSpeed;
@@ -1759,7 +1803,7 @@ class FloatingText {
         
         if (isLoot) {
             let ang = MathUtils.rand(0, Math.PI * 2);
-            let spd = MathUtils.rand(400, 700); // More aggressive outward burst
+            let spd = MathUtils.rand(700, 1200); // More aggressive outward burst
             this.vx = Math.cos(ang) * spd;
             this.vy = Math.sin(ang) * spd;
         } else if (isCrit) {
@@ -1780,18 +1824,13 @@ class FloatingText {
         this.life -= dt;
         if (this.isLoot) {
             let speedSq = this.vx*this.vx + this.vy*this.vy;
-            if (speedSq > 20) { // Lower threshold to allow it to glide further
+            if (speedSq > 10) { // Lower threshold to allow it to glide further
                 // Phase 1: Ease out (Less drag than before for further jut out)
                 this.vx *= 0.88;
                 this.vy *= 0.88;
                 this.x += this.vx * dt;
                 this.y += this.vy * dt;
-            } else {
-                // Phase 2: Sticky with slight shake & drift
-                this.x += MathUtils.rand(-1.5, 1.5);
-                this.y += MathUtils.rand(-1.5, 1.5);
-                this.y -= 5 * dt; // faint upward drift
-            }
+             } 
         } else {
             this.x += this.vx * dt;
             this.y += this.vy * dt;
@@ -1812,7 +1851,7 @@ class FloatingText {
         
         for(let j=0; j<lines.length; j++) {
             // Smaller size for Loot Title, slightly bigger for damage
-            let size = (this.isLoot && j > 0) ? 14 : (this.isLoot && j === 0 ? 18 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
+            let size = (this.isLoot && j > 0) ? 11 : (this.isLoot && j === 0 ? 16 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
             ctx.font = this.isCrit ? `italic bold ${size}px Orbitron` : `bold ${size}px Orbitron`;
             
             if (this.isCrit) {

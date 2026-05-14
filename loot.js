@@ -103,7 +103,7 @@ function generateLoot(type = null, tierLevel = -1) {
         else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult); str = `+${val} Max Speed`; }
         else if (stat === 'acceleration') { val = Math.floor(MathUtils.rand(10, 30) * tier.mult * lvlMult); str = `+${val} Thrust`; }
         else if (stat === 'maxEnergy') { val = Math.floor(MathUtils.rand(20, 60) * tier.mult * lvlMult); str = `+${val} Max Energy`; }
-        else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
+        else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(1, 4) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
         
         if (isObj || val > 0) { stats[stat] = val; statLines.push(str); }
     }

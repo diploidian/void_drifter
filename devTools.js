@@ -29,7 +29,8 @@ const devSettings = {
     clearLoot: () => {
         drops.length = 0; // instantly clear all drops off the map
     },
-    spawnRateMult: 1.0
+    spawnRateMult: 1.0,
+    starCount: 3000
 };
 
 const devGUI = new lil.GUI({ title: 'Dev Console' });
@@ -50,6 +51,25 @@ const folderSpawns = devGUI.addFolder('Spawns & Environment');
 folderSpawns.add(devSettings, 'spawnBoss').name('Spawn Boss');
 folderSpawns.add(devSettings, 'spawnAsteroids').name('Spawn Asteroids');
 folderSpawns.add(devSettings, 'spawnRateMult', 0.1, 10.0, 0.1).name('Spawn Rate Multiplier');
+folderSpawns.add(devSettings, 'starCount', 100, 10000, 100).name('Star Count').onChange(v => {
+    if (v > GAME.stars.length) {
+        let toAdd = v - GAME.stars.length;
+        for (let i = 0; i < toAdd; i++) {
+            let x = MathUtils.rand(-WORLD_SIZE*2, WORLD_SIZE*2);
+            let y = MathUtils.rand(-WORLD_SIZE*2, WORLD_SIZE*2);
+            GAME.stars.push({
+                anchorX: x, anchorY: y,
+                x: x, y: y,
+                z: MathUtils.rand(1500, 4000),
+                size: MathUtils.rand(1, 3.5),
+                pulseSpeed: MathUtils.rand(1.0, 3.0),
+                offset: MathUtils.rand(0, Math.PI*2)
+            });
+        }
+    } else if (v < GAME.stars.length) {
+        GAME.stars.length = v; // Truncate array to remove excess stars
+    }
+});
 
 const folderLoot = devGUI.addFolder('Loot Generation');
 folderLoot.add(devSettings, 'lootGen').name('Drop Rare-Leg Items');

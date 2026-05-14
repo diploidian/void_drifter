@@ -121,7 +121,7 @@ const GAME = {
 };
 
 const AUDIO_CACHE = {};
-function playSound(file, volume = 0.5) {
+function playSound(file, volume = 0.5, pitch = 1.0) {
     if(!AUDIO_CACHE[file]) {
         let newAudio = new Audio(file)
         newAudio.crossOrigin = "anonymous";
@@ -129,6 +129,11 @@ function playSound(file, volume = 0.5) {
     }
     let audio = AUDIO_CACHE[file].cloneNode();
     audio.volume = volume;
+    audio.preservesPitch = false;
+    audio.mozPreservesPitch = false;
+    audio.webkitPreservesPitch = false;
+    audio.playbackRate = pitch;
+
     audio.play().catch(e => {}); // Catch play-prevention to avoid error spam
 }
 
@@ -178,4 +183,4 @@ let shockwaves = [];
 let warpTrails = [];
 let mycelialLoops = [];
 
-const HP_ORB_DROP_RATE = 0.10;
+const HP_ORB_DROP_RATE = 0.08;

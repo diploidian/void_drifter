@@ -32,7 +32,7 @@ const AUGMENT_POOL = [
     {
         id: 'overclockedCapacitors', name: 'Overclocked Capacitors', color: '#9933ff',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
-        roll: () => MathUtils.rand(0.5, 3.5), desc: (v) => `+${v.toFixed(1)} Energy Regen/sec`,
+        roll: () => MathUtils.rand(0.1, 0.5), desc: (v) => `+${v.toFixed(2)} Energy Regen/sec`,
         effect: (v) => { BASE_STATS.energyRegen += v; }
     },
     {
@@ -59,7 +59,7 @@ const AUGMENT_POOL = [
     {
         id: 'fuelAtomizer', name: 'Fuel Atomizer', color: '#ffcc00',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 4.2c1.88 1.4 3.34 3.73 3.34 6.11 0 4.97-4.03 9-9 9s-9-4.03-9-9c0-2.38 1.46-4.71 3.34-6.11L12 2.69z"/></svg>',
-        roll: () => MathUtils.rand(0.1, 0.4), desc: (v) => `-${(v*100).toFixed(0)}% Fuel Consumption`,
+        roll: () => MathUtils.rand(0.1, 0.4), desc: (v) => `-${v.toFixed(2)} Fuel Consumption`,
         effect: (v) => { BASE_STATS.fuelEfficiency -= v; }
     },
     {
@@ -111,6 +111,9 @@ const player = {
     level: 1,
     xp: 0,
     xpNext: 100,
+    totalKills: 0,
+    killsThisLevel: 0,
+    killsLastLevel: 0,
     stats: { ...BASE_STATS },
     statBreakdown: {},
     augments: {},
@@ -119,25 +122,27 @@ const player = {
         { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.25, type: 'projectile' },
         { id: 2, name: 'EMP Blast', cost: 20, cd: 0, maxCd: 5.0, type: 'aoe' },
         { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 3.0, type: 'dash', isFuel: true },
-        { id: 4, name: 'Singularity Torpedo', cost: 40, cd: 0, maxCd: 10.0, type: 'special' }
+        { id: 4, name: 'Black Hole', cost: 40, cd: 0, maxCd: 10.0, type: 'special' }
     ],
     
     gainXp(amount) {
-        let xpMult = (equipment['Reactor'] && equipment['Reactor'].perk === 'XP Boost') ? 1.15 : 1.0;
+        let xpMult = (equipment['Reactor'] && equipment['Reactor'].perk === 'XP Boost') ? 1.05 : 1.0;
         this.xp += amount * xpMult;
         while (this.xp >= this.xpNext) {
             this.xp -= this.xpNext;
             this.level++;
-            this.xpNext = 100 * this.level; // Requires more total XP linearly
+            this.killsLastLevel = this.killsThisLevel;
+            this.killsThisLevel = 0;
+            this.xpNext = (48 * Math.pow(this.level, 2.30)); /* this.xpNext = (100 * Math.pow(this.level, 1.2)); // Requires more total XP polynomialy */
             
             // Level Up Rewards
             // Level Up Rewards (Base Stats Scaling)
-            BASE_STATS.maxHp += 20;
+            BASE_STATS.maxHp += 5;
             BASE_STATS.damage.min += 1;
             BASE_STATS.damage.max += 2;
             
             // Heal 25% on level up and reset CD
-            this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + this.stats.maxHp * 0.25);
+            this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + this.stats.maxHp * 0.1);
             for(let s of this.skills) s.cd = 0;
             
             createFloatingText("LEVEL UP!", this.x, this.y - 30, '#00ff66', 2.5, false, false);
@@ -243,7 +248,7 @@ const player = {
             
             // Low HP sound trigger (triggers upon dropping to 25% or less)
             if (this.stats.hp > 0 && this.stats.hp <= this.stats.maxHp * 0.25 && oldHp > this.stats.maxHp * 0.25) {
-                playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/spaceEngine_000.ogg');
+                playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/spaceEngine_000.ogg');
             }
 
             // Screen Glow intensity increase

@@ -121,24 +121,25 @@ function useSkill(index) {
     if(index === 0) { // Pulse Blaster
         let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
         let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
+        let pitch = MathUtils.rand(0.85, 1.15);
         
         if (isTripleUpgraded) {
             if (!player.activeWhipBeam) {
-                playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/laserLarge_001.ogg');
+                playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserLarge_001.ogg', 0.5, pitch);
                 player.activeWhipBeam = new WhipBeam(player, getDamage(player), varColor('--accent'));
             }
         } else if (hasTriple) {
-            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/laserLarge_001.ogg');
+            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserLarge_001.ogg', 0.5, pitch);
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
             projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
-            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sandbox/sounds/laserSmall_004.ogg');
+            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserSmall_004.ogg', 0.5, pitch);
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
     else if(index === 1) { // EMP
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/spaceEngine_002.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/spaceEngine_002.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
         shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
         for(let e of entities) {
@@ -149,7 +150,7 @@ function useSkill(index) {
         }
     }
     else if(index === 2) { // Warp Dash
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/doorOpen_002.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/doorOpen_002.ogg');
         // Reduced 40% (500 -> 300)
         let dist = Math.min(300, MathUtils.distance(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY));
         let oldX = player.x, oldY = player.y;
@@ -163,7 +164,7 @@ function useSkill(index) {
         warpTrails.push(new WarpTrail(blastStartX, blastStartY, player.x, player.y, 170, 0.75, varColor('--energy')));
     }
     else if(index === 3) { // Singularity
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/engineCircular_000.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/engineCircular_000.ogg');
         player.activeSingularity = new Singularity(player.x, player.y, GAME.mouse.worldX, GAME.mouse.worldY);
         entities.push(player.activeSingularity);
     }
@@ -346,7 +347,7 @@ function update(dt) {
     } else {
         player.timers.shieldRegen -= dt;
         if(player.timers.shieldRegen <= 0 && player.stats.shields < player.stats.maxShields) {
-            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/forceField_002.ogg');
+            playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/forceField_002.ogg');
         }
     }
 
@@ -386,6 +387,43 @@ function update(dt) {
     for(let i=floatingTexts.length-1; i>=0; i--) {
         floatingTexts[i].update(dt);
         if(floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
+    }
+
+    // Background Space Pinch
+    let bh = player.activeSingularity;
+    for(let s of GAME.stars) {
+        if (s.anchorX === undefined) { s.anchorX = s.x; s.anchorY = s.y; }
+        if (bh && (bh.state === 'GROWING' || bh.state === 'CHARGING')) {
+            let dist = MathUtils.distance(s.x, s.y, bh.x, bh.y);
+            if (dist < bh.maxRadius * 3) {
+                let normalizedDist = Math.max(0, 1 - (dist / (bh.maxRadius * 3)));
+                let pullVelocity = Math.pow(normalizedDist, 3) * 1500 * dt;
+                if (pullVelocity >= dist) {
+                    s.x = bh.x; s.y = bh.y;
+                } else {
+                    let angle = MathUtils.angle(s.x, s.y, bh.x, bh.y);
+                    s.x += Math.cos(angle) * pullVelocity;
+                    s.y += Math.sin(angle) * pullVelocity;
+                }
+            }
+        }
+        s.x += (s.anchorX - s.x) * 4 * dt;
+        s.y += (s.anchorY - s.y) * 4 * dt;
+    }
+    for(let c of GAME.clouds) {
+        if (c.anchorX === undefined) { c.anchorX = c.x; c.anchorY = c.y; }
+        if (bh && (bh.state === 'GROWING' || bh.state === 'CHARGING')) {
+            let dist = MathUtils.distance(c.x, c.y, bh.x, bh.y);
+            if (dist < bh.maxRadius * 2) {
+                let normalizedDist = Math.max(0, 1 - (dist / (bh.maxRadius * 2)));
+                let pullVelocity = Math.pow(normalizedDist, 3) * 800 * dt;
+                let angle = MathUtils.angle(c.x, c.y, bh.x, bh.y);
+                c.x += Math.cos(angle) * pullVelocity;
+                c.y += Math.sin(angle) * pullVelocity;
+            }
+        }
+        c.x += (c.anchorX - c.x) * 2 * dt;
+        c.y += (c.anchorY - c.y) * 2 * dt;
     }
 
     updateMycelialNetwork();
@@ -462,9 +500,32 @@ function draw() {
         let p = project(s.x, s.y, s.z);
         if(p) {
             let alpha = 0.3 + 0.4 * Math.sin(time * s.pulseSpeed + s.offset);
+            
+            let stretch = 1;
+            let drawAngle = 0;
+            let bh = player.activeSingularity;
+            if (bh && (bh.state === 'GROWING' || bh.state === 'CHARGING')) {
+                let dist = MathUtils.distance(s.x, s.y, bh.x, bh.y);
+                if (dist < bh.maxRadius * 3) {
+                    let normalizedDist = Math.max(0, 1 - (dist / (bh.maxRadius * 3)));
+                    stretch = 1 + Math.pow(normalizedDist, 3) * 15;
+                    alpha = Math.min(1.0, alpha + normalizedDist);
+                    drawAngle = MathUtils.angle(s.x, s.y, bh.x, bh.y);
+                }
+            }
+
             ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
             let scale = getScale(s.z);
-            ctx.beginPath(); ctx.arc(p.x, p.y, s.size * scale, 0, Math.PI*2); ctx.fill();
+            if (stretch > 1) {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(drawAngle);
+                ctx.scale(stretch, 1 / stretch);
+                ctx.beginPath(); ctx.arc(0, 0, s.size * scale, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            } else {
+                ctx.beginPath(); ctx.arc(p.x, p.y, s.size * scale, 0, Math.PI*2); ctx.fill();
+            }
         }
     }
 
@@ -723,7 +784,7 @@ window.addEventListener('wheel', e => {
 function useFuelCell() {
     let idx = inventory.findIndex(i => i && i.type === 'Fuel');
     if (idx !== -1) {
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/impactMetal_004.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/impactMetal_004.ogg');
         let item = inventory[idx];
         let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);

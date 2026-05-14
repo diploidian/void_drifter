@@ -206,7 +206,13 @@ function updateAugmentIcons() {
 
 function updateUI() {
     document.getElementById('xp-fill').style.width = `${(player.xp / player.xpNext)*100}%`;
+    document.getElementById('xp-text').innerText = `${Math.floor(player.xp)} / ${Math.floor(player.xpNext)}`;
     document.getElementById('lvl-text').innerText = `LEVEL ${player.level}`;
+
+    let killCounter = document.getElementById('kill-counter');
+    if (killCounter) {
+        killCounter.innerHTML = `kills last level: <span class="kill-value">${player.killsLastLevel}</span><br>kills this level: <span class="kill-value">${player.killsThisLevel}</span><br>total kills: <span class="kill-value">${player.totalKills}</span>`;
+    }
 
     document.getElementById('hp-fill').style.width = `${(player.stats.hp / player.stats.maxHp)*100}%`;
     document.getElementById('hp-text').innerText = `HP: ${Math.floor(player.stats.hp)}/${player.stats.maxHp}`;
@@ -220,6 +226,13 @@ function updateUI() {
     
     document.getElementById('fuel-fill').style.width = `${(player.stats.fuel / player.stats.maxFuel)*100}%`;
     document.getElementById('fuel-text').innerText = `FUEL: ${Math.floor(player.stats.fuel)}`;
+
+    let fuelEff = (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') ? 0.75 : 1.0;
+    fuelEff *= player.stats.fuelEfficiency !== undefined ? player.stats.fuelEfficiency : 1.0;
+    let consumption = (15 * fuelEff).toFixed(2);
+    
+    let fuelWrap = document.getElementById('fuel-fill').parentElement;
+    fuelWrap.onmouseover = (e) => showTooltip('Thruster Fuel', `Drains when moving. Replenish from asteroids and enemies.<br><br>Max Speed Drain: <span style="color:#0f0">${consumption} /sec</span>`, '', e);
 
     // Skills CD & Energy check
     for(let i=0; i<4; i++) {
@@ -352,7 +365,7 @@ function renderStats() {
         ${getStatHtml('maxShields', 'Shields', 'Energy barrier that absorbs damage before Hull.')}
         ${getStatHtml('shieldRegen', 'Shield Regen', 'Amount of Shield recovered per second.', v => v + '/s')}
         ${getStatHtml('maxEnergy', 'Energy', 'Maximum Reactor Energy for using skills.')}
-        ${getStatHtml('energyRegen', 'Energy Regen', 'Amount of Energy recovered per second.', v => v + '/s')}
+        ${getStatHtml('energyRegen', 'Energy Regen', 'Amount of Energy recovered per second.', v => Number(v).toFixed(1) + '/s')}
         ${getStatHtml('maxSpeed', 'Max Speed', 'Top speed of your spacecraft.')}
         ${getStatHtml('acceleration', 'Acceleration', 'How fast your ship reaches top speed (Thrust).')}
     `;
@@ -389,7 +402,7 @@ function useItem(index) {
     if(!item) return;
 
     if (item.type === 'Fuel') {
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/impactMetal_004.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/impactMetal_004.ogg');
         let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
         player.stats.fuel = Math.min(player.stats.maxFuel, player.stats.fuel + amount);
         item.count--;
@@ -608,7 +621,7 @@ function toggleInventory() {
 }
 
 function die() {
-    playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/explosionCrunch_003.ogg');
+    playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/explosionCrunch_003.ogg');
     GAME.state = 'DEAD';
     document.getElementById('char-sheet').style.display = 'none';
     document.body.classList.remove('inv-open');
