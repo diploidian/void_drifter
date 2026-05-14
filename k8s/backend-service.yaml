@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: void-drifter-backend
+  namespace: void-drifter
+  labels:
+    app: void-drifter-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: void-drifter-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

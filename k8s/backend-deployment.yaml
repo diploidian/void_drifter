@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: void-drifter-backend
+  namespace: void-drifter
+  labels:
+    app: void-drifter-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: void-drifter-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: void-drifter-backend
+    spec:
+      containers:
+        - name: backend
+          image: romainecr.azurecr.io/void-drifter-backend:placeholder
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: production
+            - name: PUBLIC_BASE_URL
+              value: https://void-drifter.romaine.life
+            - name: FRONTEND_ORIGIN
+              value: https://diploidian.github.io
+            - name: FRONTEND_REDIRECT_URL
+              value: https://diploidian.github.io/void_drifter/
+            - name: MICROSOFT_TENANT_ID
+              value: common
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: void-drifter-backend-secrets
+                  key: DATABASE_URL
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: void-drifter-backend-secrets
+                  key: SESSION_SECRET
+            - name: MICROSOFT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: void-drifter-backend-secrets
+                  key: MICROSOFT_CLIENT_ID
+            - name: MICROSOFT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: void-drifter-backend-secrets
+                  key: MICROSOFT_CLIENT_SECRET
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 3

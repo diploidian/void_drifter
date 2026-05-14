@@ -11,6 +11,17 @@
     <canvas id="gameCanvas"></canvas>
 
     <div id="ui-layer">
+        <div id="auth-panel" class="interactive" data-auth-state="loading">
+            <div id="auth-status">Checking sign-in...</div>
+            <div class="auth-actions">
+                <button id="auth-login" type="button">Microsoft Login</button>
+                <button id="auth-save" type="button">Save</button>
+                <button id="auth-load" type="button">Load</button>
+                <button id="auth-logout" type="button">Logout</button>
+            </div>
+            <div id="auth-message" aria-live="polite"></div>
+        </div>
+
         <div id="controls-hint">
             [WASD] Move & Accelerate<br>
             [SPACE] Dodge / Thruster Burst<br>
@@ -152,5 +163,9 @@
         <button onclick="location.reload()">REBOOT SYSTEM</button>
     </div>
 <script src="game.js"></script>
+<script>
+    window.VOID_DRIFTER_API_URL = window.VOID_DRIFTER_API_URL || 'https://void-drifter.romaine.life';
+</script>
+<script src="auth-ui.js"></script>
 </body>
 </html>

@@ -109,7 +109,25 @@
         .hud-eq-slot svg { width: 70%; height: 70%; }
 
         /* Controls hint */
-        #controls-hint { position: absolute; top: 20px; left: 20px; font-size: 12px; color: rgba(255,255,255,0.5); pointer-events: none; line-height: 1.5; text-shadow: 1px 1px 2px black; }
+        #controls-hint { position: absolute; top: 118px; left: 20px; font-size: 12px; color: rgba(255,255,255,0.5); pointer-events: none; line-height: 1.5; text-shadow: 1px 1px 2px black; }
+
+        #auth-panel { position: absolute; top: 20px; left: 20px; width: 265px; background: rgba(5, 10, 18, 0.82); border: 1px solid var(--border); border-radius: 6px; padding: 10px; color: var(--text); box-shadow: 0 0 18px rgba(0,0,0,0.45); }
+        #auth-status { font-family: 'Orbitron', sans-serif; font-size: 11px; color: var(--accent); min-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .auth-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        #auth-panel button { border: 1px solid var(--border); background: rgba(0,0,0,0.55); color: var(--text); border-radius: 4px; padding: 5px 8px; font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; }
+        #auth-panel button:hover { border-color: var(--accent); color: var(--accent); }
+        #auth-message { min-height: 16px; margin-top: 6px; font-size: 11px; color: rgba(255,255,255,0.68); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #auth-panel[data-auth-state="signed-out"] #auth-save,
+        #auth-panel[data-auth-state="signed-out"] #auth-load,
+        #auth-panel[data-auth-state="signed-out"] #auth-logout,
+        #auth-panel[data-auth-state="missing-config"] #auth-save,
+        #auth-panel[data-auth-state="missing-config"] #auth-load,
+        #auth-panel[data-auth-state="missing-config"] #auth-logout,
+        #auth-panel[data-auth-state="missing-config"] #auth-login,
+        #auth-panel[data-auth-state="loading"] #auth-save,
+        #auth-panel[data-auth-state="loading"] #auth-load,
+        #auth-panel[data-auth-state="loading"] #auth-logout { display: none; }
+        #auth-panel[data-auth-state="signed-in"] #auth-login { display: none; }
 
         .tier-0 { color: #aaa; border-color: #555; } /* Junk */
         .tier-1 { color: #fff; border-color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.5); } /* Common */

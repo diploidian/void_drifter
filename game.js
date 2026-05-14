@@ -3269,6 +3269,87 @@ function useFuelCell() {
     }
 }
 
+window.VoidDrifterProgress = {
+    capture() {
+        return {
+            version: 1,
+            savedAt: new Date().toISOString(),
+            baseStats: JSON.parse(JSON.stringify(BASE_STATS)),
+            player: {
+                x: player.x,
+                y: player.y,
+                level: player.level,
+                xp: player.xp,
+                xpNext: player.xpNext,
+                stats: {
+                    hp: player.stats.hp,
+                    shields: player.stats.shields,
+                    energy: player.stats.energy,
+                    fuel: player.stats.fuel
+                }
+            },
+            inventory: JSON.parse(JSON.stringify(inventory)),
+            equipment: JSON.parse(JSON.stringify(equipment)),
+            game: {
+                bossSpawned: GAME.bossSpawned,
+                bossDefeated: GAME.bossDefeated,
+                fow: Array.from(GAME.fowMap.entries())
+            }
+        };
+    },
+
+    apply(save) {
+        if (!save || save.version !== 1) {
+            throw new Error('Unsupported save data.');
+        }
+
+        if (save.baseStats) {
+            for (let key of Object.keys(BASE_STATS)) {
+                delete BASE_STATS[key];
+            }
+            Object.assign(BASE_STATS, JSON.parse(JSON.stringify(save.baseStats)));
+        }
+
+        inventory = Array.isArray(save.inventory)
+            ? save.inventory.slice(0, INVENTORY_SIZE)
+            : new Array(INVENTORY_SIZE).fill(null);
+        while (inventory.length < INVENTORY_SIZE) inventory.push(null);
+
+        if (save.equipment && typeof save.equipment === 'object') {
+            for (let slot of SLOT_TYPES) {
+                equipment[slot] = save.equipment[slot] || null;
+            }
+        }
+
+        if (save.player) {
+            player.x = Number(save.player.x) || 0;
+            player.y = Number(save.player.y) || 0;
+            player.vx = 0;
+            player.vy = 0;
+            player.level = Number(save.player.level) || 1;
+            player.xp = Number(save.player.xp) || 0;
+            player.xpNext = Number(save.player.xpNext) || 100;
+        }
+
+        GAME.bossSpawned = Boolean(save.game && save.game.bossSpawned);
+        GAME.bossDefeated = Boolean(save.game && save.game.bossDefeated);
+        GAME.fowMap = new Map(Array.isArray(save.game && save.game.fow) ? save.game.fow : []);
+
+        player.updateStats();
+
+        if (save.player && save.player.stats) {
+            player.stats.hp = Math.min(player.stats.maxHp, Number(save.player.stats.hp) || player.stats.maxHp);
+            player.stats.shields = Math.min(player.stats.maxShields, Number(save.player.stats.shields) || player.stats.maxShields);
+            player.stats.energy = Math.min(player.stats.maxEnergy, Number(save.player.stats.energy) || player.stats.maxEnergy);
+            player.stats.fuel = Math.min(player.stats.maxFuel, Number(save.player.stats.fuel) || player.stats.maxFuel);
+        }
+
+        renderInventory();
+        renderEquipment();
+        updateUI();
+    }
+};
+
 // Setup
 player.updateStats();
 initMap();
