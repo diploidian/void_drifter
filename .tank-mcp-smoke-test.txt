@@ -1,0 +1,3 @@
+Temporary smoke test for Tank GitHub MCP cross-installation PR creation.
+Created: 2026-05-14T04:59:00Z
+This branch/PR should be closed and deleted after verification.
