@@ -1,0 +1,9 @@
+# Ignore Node dependencies
+node_modules/
+
+# Ignore Vite build outputs
+dist/
+build/
+
+# Ignore minified dependency trees
+package-lock.json

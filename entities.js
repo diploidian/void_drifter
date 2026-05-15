@@ -17,6 +17,22 @@ class Asteroid {
         this.rotSpeed = MathUtils.rand(-1, 1) * 0.02;
         this.collisionDamageMult = 0.05;
         this.flashTimer = 0;
+        
+        // Setup WebGL Container
+        this.pixiObj = new PIXI.Container();
+        this.body = new PIXI.Graphics();
+        
+        this.body.beginFill(0x111111);
+        this.body.drawPolygon(this.points.flatMap(p => [p.x, p.y + 15]));
+        this.body.endFill();
+        this.body.beginFill(0x222222);
+        this.body.lineStyle(2, 0x555555);
+        this.body.drawPolygon(this.points.flatMap(p => [p.x, p.y]));
+        this.body.endFill();
+        
+        this.hpBar = new PIXI.Graphics();
+        this.pixiObj.addChild(this.body, this.hpBar);
+        GAME.layers.game.addChild(this.pixiObj);
     }
     update(dt) {
         if (this.flashTimer > 0) this.flashTimer -= dt;
@@ -45,7 +61,7 @@ class Asteroid {
             }
         }
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if (this.pixiObj) this.pixiObj.visible = false;
@@ -80,7 +96,10 @@ class Asteroid {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
-            if (this.pixiObj) this.pixiObj.destroy();
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
 
             createParticles(this.x, this.y, this.z, 20, '#555');
             // Drop loot
@@ -243,6 +262,10 @@ class Enemy {
                         }
                         createParticles(this.x, this.y, this.z, 50, '#ff8800');
                         this.dead = true;
+                        if (this.pixiObj) {
+                            this.pixiObj.destroy({ children: true });
+                            this.pixiObj = null;
+                        }
                         return true; // Despawn without dropping loot/xp
                     } else {
                         player.takeDamage(getDamage(this), this);
@@ -292,9 +315,6 @@ class Enemy {
                 else {
                     projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this) * this.shooterDamageMult, false, this.color, this));
                     this.attackTimer = 2.0;
-        
-        this.graphics = new PIXI.Graphics();
-        GAME.layers.game.addChild(this.graphics);
                 }
             }
         }
@@ -303,7 +323,7 @@ class Enemy {
         this.y += this.vy * dt;
         if(this.attackTimer > 0) this.attackTimer -= dt;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if(this.pixiObj) this.pixiObj.visible = false;
@@ -370,7 +390,10 @@ class Enemy {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
-            if (this.pixiObj) this.pixiObj.destroy();
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
             player.totalKills++;
             player.killsThisLevel++;
 
@@ -453,6 +476,10 @@ class FungalNode {
         
         if (this.life <= 0) {
             this.dead = true;
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
             createParticles(this.x, this.y, 0, 10, '#99ff33');
             return true;
         }
@@ -479,7 +506,7 @@ class FungalNode {
         
         return false;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if(this.pixiObj) this.pixiObj.visible = false;
@@ -524,7 +551,10 @@ class FungalNode {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
-            if (this.pixiObj) this.pixiObj.destroy();
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
             createParticles(this.x, this.y, 0, 20, '#99ff33');
             if (Math.random() < 0.2) xpOrbs.push(new XpOrb(this.x, this.y, this.level * 2));
             if (Math.random() < HP_ORB_DROP_RATE) hpOrbs.push(new HpOrb(this.x, this.y));
@@ -657,6 +687,10 @@ class MycelialSpreader extends Enemy {
                         let oldNode = oldestNet.shift();
                         if (!oldNode.dead) {
                             oldNode.dead = true;
+                            if (oldNode.pixiObj) {
+                                oldNode.pixiObj.destroy({ children: true });
+                                oldNode.pixiObj = null;
+                            }
                             createParticles(oldNode.x, oldNode.y, 0, 20, '#99ff33');
                             break; 
                         }
@@ -681,13 +715,40 @@ class MycelialSpreader extends Enemy {
             }
         }
     }
-    draw(ctx) {
-        super.draw(ctx);
+    draw() {
+        super.draw();
         if (this.pixiObj && this.bioSpots) {
             let pulse = (Math.sin(Date.now() / 200) + 1) / 2;
             this.bioSpots.alpha = 0.3 + 0.7 * pulse;
             this.bioSpots.rotation = this.body.rotation;
         }
+    }
+    takeDamage(amount, source, color = '#fff') {
+        let died = super.takeDamage(amount, source, color);
+        if (died) {
+            // Clean up all active nodes if the Spreader is killed
+            for (let net of this.networks) {
+                for (let node of net) {
+                    if (!node.dead) {
+                        node.dead = true;
+                        if (node.pixiObj) {
+                            node.pixiObj.destroy({ children: true });
+                            node.pixiObj = null;
+                        }
+                    }
+                }
+            }
+            for (let node of this.currentNetwork) {
+                if (!node.dead) {
+                    node.dead = true;
+                    if (node.pixiObj) {
+                        node.pixiObj.destroy({ children: true });
+                        node.pixiObj = null;
+                    }
+                }
+            }
+        }
+        return died;
     }
 }
 
@@ -748,7 +809,7 @@ class BrutalistMonolith extends Asteroid {
         if (this.flashTimer > 0) this.flashTimer -= dt;
         if (this.telegraphTimer > 0) this.telegraphTimer -= dt;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if(this.pixiObj) this.pixiObj.visible = false;
@@ -876,8 +937,8 @@ class MonolithArchitect extends Enemy {
         }
         return false;
     }
-    draw(ctx) {
-        super.draw(ctx);
+    draw() {
+        super.draw();
     }
 }
 
@@ -893,8 +954,26 @@ class Projectile {
         this.type = type;
         this.life = 2.0;
 
-        this.graphics = new PIXI.Graphics();
-        GAME.layers.game.addChild(this.graphics);
+        this.pixiObj = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.pixiObj);
+        
+        let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
+        
+        if (this.type === 'bullet') {
+            this.pixiObj.lineStyle(6, c, 0.3);
+            this.pixiObj.moveTo(-15, 0);
+            this.pixiObj.lineTo(15, 0);
+            this.pixiObj.lineStyle(2, 0xffffff, 1.0);
+            this.pixiObj.moveTo(-15, 0);
+            this.pixiObj.lineTo(15, 0);
+        } else {
+            this.pixiObj.beginFill(c, 0.5);
+            this.pixiObj.drawCircle(0, 0, 6);
+            this.pixiObj.endFill();
+            this.pixiObj.beginFill(c, 1.0);
+            this.pixiObj.drawCircle(0, 0, 3);
+            this.pixiObj.endFill();
+        }
     }
     update(dt) {
         this.x += this.vx * dt;
@@ -914,7 +993,10 @@ class Projectile {
                         e.takeDamage(this.damage, this.source, this.color);
                         if (this.type === 'bullet') shockwaves.push(new Shockwave(this.x, this.y, this.z, this.color));
                         else createParticles(this.x, this.y, 0, 5, this.color);
-                    if (this.graphics) this.graphics.destroy();
+                        if (this.pixiObj) {
+                            this.pixiObj.destroy();
+                            this.pixiObj = null;
+                        }
                         return true; // destroy projectile
                     }
                 }
@@ -924,46 +1006,37 @@ class Projectile {
                 player.takeDamage(this.damage, this.source);
                 if (this.type === 'bullet') shockwaves.push(new Shockwave(this.x, this.y, this.z, this.color));
                 else createParticles(this.x, this.y, 0, 5, this.color);
-            if (this.graphics) this.graphics.destroy();
+                if (this.pixiObj) {
+                    this.pixiObj.destroy();
+                    this.pixiObj = null;
+                }
                 return true;
             }
         }
-    if (this.life <= 0) {
-        if (this.graphics) this.graphics.destroy();
-        return true;
-    }
-    return false;
+        if (this.life <= 0) {
+            if (this.pixiObj) {
+                this.pixiObj.destroy();
+                this.pixiObj = null;
+            }
+            return true;
+        }
+        return false;
     }
     draw() {
-        if (!this.graphics) return;
-        this.graphics.clear();
+        if (!this.pixiObj) return;
         let p = project(this.x, this.y, this.z);
         if(!p) {
-            this.graphics.visible = false;
+            this.pixiObj.visible = false;
             return;
         }
-        
-        this.graphics.visible = true;
-        this.graphics.zIndex = this.z;
-        let c = parseColor(this.color);
-
+        this.pixiObj.visible = true;
+        let s = getScale(this.z);
+        this.pixiObj.position.set(p.x, p.y);
+        this.pixiObj.scale.set(s);
         if (this.type === 'bullet' && (this.vx !== 0 || this.vy !== 0)) {
-            let s = getScale(this.z);
-            let angle = Math.atan2(this.vy, this.vx);
-            let length = 15 * s;
-            
-            this.graphics.lineStyle({width: 6 * s, color: c, alpha: 1.0, cap: PIXI.LINE_CAP.ROUND});
-            this.graphics.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
-            this.graphics.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
-            
-            this.graphics.lineStyle({width: 2 * s, color: 0xffffff, alpha: 1.0, cap: PIXI.LINE_CAP.ROUND});
-            this.graphics.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
-            this.graphics.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
-        } else {
-            this.graphics.beginFill(c);
-            this.graphics.drawCircle(p.x, p.y, 3 * getScale(this.z));
-            this.graphics.endFill();
+            this.pixiObj.rotation = Math.atan2(this.vy, this.vx);
         }
+        this.pixiObj.zIndex = this.z;
     }
 }
 
@@ -996,7 +1069,10 @@ class WhipBeam {
 
     update(dt, targetX, targetY) {
         if (this.dead) {
-            if(this.graphics) this.graphics.destroy();
+            if(this.graphics) {
+                this.graphics.destroy();
+                this.graphics = null;
+            }
             return true;
         }
 
@@ -1075,7 +1151,10 @@ class WhipBeam {
                 this.pulseCount++;
                 if (this.pulseCount >= this.maxPulsesNoTarget) {
                     this.dead = true;
-                    if(this.graphics) this.graphics.destroy();
+                    if(this.graphics) {
+                        this.graphics.destroy();
+                        this.graphics = null;
+                    }
                     return true;
                 }
             } else {
@@ -1104,7 +1183,7 @@ class WhipBeam {
         let widthMult = 1 + 0.5 * Math.sin(Date.now() / 50);
         let scale = getScale(this.z);
         let w = 4 * widthMult * scale;
-        let c = PIXI.utils.string2hex(this.color);
+        let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
         
         this.graphics.lineStyle(w + 4*scale, c, 0.3); // Glow effect
         this.graphics.moveTo(p0.x, p0.y);
@@ -1156,7 +1235,10 @@ class SpecialFuelDrop {
     update(dt) {
         this.life -= dt;
         if (this.life <= 0) {
-            if (this.sprite) this.sprite.destroy();
+            if (this.sprite) {
+                this.sprite.destroy();
+                this.sprite = null;
+            }
             return true;
         }
         
@@ -1176,12 +1258,15 @@ class SpecialFuelDrop {
             createFloatingText(`+${Math.floor(this.fuelAmount)} Fuel`, this.x, this.y, '#ffff00', 1.5, true);
             playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/impactMetal_004.ogg');
             updateUI();
-            if (this.sprite) this.sprite.destroy();
+            if (this.sprite) {
+                this.sprite.destroy();
+                this.sprite = null;
+            }
             return true;
         }
         return false;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if (this.sprite) this.sprite.visible = false;
@@ -1214,9 +1299,25 @@ class HomingMissile {
         this.damageScale = 0.2;
         this.explosionDamageMult = 1.0;
         this.damage = this.baseDamage * (1 + (player.level - 1) * this.damageScale);
-        
-        this.graphics = new PIXI.Graphics();
-        GAME.layers.game.addChild(this.graphics);
+
+        this.pixiObj = new PIXI.Container();
+        this.rotContainer = new PIXI.Container();
+        this.body = new PIXI.Graphics();
+        this.exhaust = new PIXI.Graphics();
+        this.hpBar = new PIXI.Graphics();
+        this.fuelBar = new PIXI.Graphics();
+
+        this.body.beginFill(0xffaa00);
+        this.body.lineStyle(1, 0x222222);
+        this.body.moveTo(10, 0); 
+        this.body.lineTo(-10, 7.5);
+        this.body.lineTo(-10, -7.5);
+        this.body.closePath();
+        this.body.endFill();
+
+        this.rotContainer.addChild(this.exhaust, this.body);
+        this.pixiObj.addChild(this.rotContainer, this.hpBar, this.fuelBar);
+        GAME.layers.game.addChild(this.pixiObj);
     }
     update(dt) {
         if (this.dead) return true;
@@ -1249,7 +1350,10 @@ class HomingMissile {
     }
     detonate() {
         this.dead = true;
-        if (this.graphics) this.graphics.destroy();
+        if (this.pixiObj) {
+            this.pixiObj.destroy({ children: true });
+            this.pixiObj = null;
+        }
         createParticles(this.x, this.y, 0, 50, '#ff4400');
         shockwaves.push(new Shockwave(this.x, this.y, 0, '#ff4400', 75));
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
@@ -1260,59 +1364,46 @@ class HomingMissile {
         }
     }
     draw() {
-        if (!this.graphics) return;
-        this.graphics.clear();
+        if (!this.pixiObj) return;
         let p = project(this.x, this.y, this.z);
         if(!p) {
-            this.graphics.visible = false;
+            this.pixiObj.visible = false;
             return;
         }
+        this.pixiObj.visible = true;
         let s = getScale(this.z);
+        this.pixiObj.position.set(p.x, p.y);
+        this.pixiObj.scale.set(s);
+        this.pixiObj.zIndex = this.z;
         
-        this.graphics.visible = true;
-        this.graphics.position.set(p.x, p.y);
-        this.graphics.scale.set(s);
-        this.graphics.rotation = this.angle;
-        this.graphics.zIndex = this.z;
+        this.rotContainer.rotation = this.angle;
         
-        this.graphics.beginFill(0xffaa00);
-        this.graphics.moveTo(10, 0); 
-        this.graphics.lineTo(-10, 7.5);
-        this.graphics.lineTo(-10, -7.5);
-        this.graphics.closePath();
-        this.graphics.endFill();
-    
-        this.graphics.lineStyle(1, 0x222222);
-        this.graphics.moveTo(10, 0); 
-        this.graphics.lineTo(-10, 7.5);
-        this.graphics.lineTo(-10, -7.5);
-        this.graphics.lineTo(10, 0);
-        
+        this.exhaust.clear();
         if (this.fuel > 0) {
-            this.graphics.lineStyle(0);
-            this.graphics.beginFill(0xff0000);
-            this.graphics.moveTo(-10, 5);
-            this.graphics.lineTo(-10 - Math.random() * 15, 0);
-            this.graphics.lineTo(-10, -5);
-            this.graphics.endFill();
+            this.exhaust.beginFill(0xff0000);
+            this.exhaust.moveTo(-10, 5);
+            this.exhaust.lineTo(-10 - Math.random() * 15, 0);
+            this.exhaust.lineTo(-10, -5);
+            this.exhaust.endFill();
         }
-        
-        this.graphics.rotation = 0;
         
         let barW = 30;
         let barH = 4;
         let bY = 20;
         
-        this.graphics.beginFill(0xff0000);
-        this.graphics.drawRect(-barW/2, bY, barW, barH);
-        this.graphics.beginFill(0x00ff00);
-        this.graphics.drawRect(-barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        this.hpBar.clear();
+        this.hpBar.beginFill(0xff0000);
+        this.hpBar.drawRect(-barW/2, bY, barW, barH);
+        this.hpBar.beginFill(0x00ff00);
+        this.hpBar.drawRect(-barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        this.hpBar.endFill();
         
-        this.graphics.beginFill(0x333333);
-        this.graphics.drawRect(-barW/2, bY + barH + 2, barW, barH);
-        this.graphics.beginFill(0xffff00);
-        this.graphics.drawRect(-barW/2, bY + barH + 2, barW * Math.max(0, this.fuel / 100), barH);
-        this.graphics.endFill();
+        this.fuelBar.clear();
+        this.fuelBar.beginFill(0x333333);
+        this.fuelBar.drawRect(-barW/2, bY + barH + 2, barW, barH);
+        this.fuelBar.beginFill(0xffff00);
+        this.fuelBar.drawRect(-barW/2, bY + barH + 2, barW * Math.max(0, this.fuel / 100), barH);
+        this.fuelBar.endFill();
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
@@ -1322,7 +1413,10 @@ class HomingMissile {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
-            if (this.graphics) this.graphics.destroy();
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
             createParticles(this.x, this.y, 0, 30, '#888');
             entities.push(new SpecialFuelDrop(this.x, this.y, this.fuel));
             return true;
@@ -1460,9 +1554,9 @@ class Boss extends Enemy {
         this.hpBar.drawRect(-barW/2, bY, barW, barH);
         this.hpBar.beginFill(0xff0000);
         this.hpBar.drawRect(-barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        this.hpBar.endFill();
         this.hpBar.lineStyle(1, 0xffffff);
         this.hpBar.drawRect(-barW/2, bY, barW, barH);
-        this.hpBar.endFill();
         
         this.bossText.position.set(0, bY - 4);
     }
@@ -1504,6 +1598,9 @@ class Singularity {
         this.currentRadius = 100;
         this.maxRadius = 400;
         this.capturedColors = new Set();
+        
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
     }
     update(dt) {
         if (this.state === 'GROWING') {
@@ -1533,8 +1630,11 @@ class Singularity {
             }
             
             if (this.timer <= 0) {
-                if (this.graphics) this.graphics.destroy();
                 this.explode();
+                if (this.graphics) {
+                    this.graphics.destroy();
+                    this.graphics = null;
+                }
                 return true;
             }
         }
@@ -1612,9 +1712,17 @@ class Singularity {
         }
     }
 
-    draw(ctx) {
+    draw() {
+        if (!this.graphics) return;
+        this.graphics.clear();
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
+        if(!p) {
+            this.graphics.visible = false;
+            return;
+        }
+        
+        this.graphics.visible = true;
+        this.graphics.zIndex = this.z;
         let s = getScale(this.z);
         
         let tremorX = 0, tremorY = 0;
@@ -1623,13 +1731,13 @@ class Singularity {
             tremorY = MathUtils.rand(-5, 5) * s;
         }
 
-        ctx.fillStyle = 'rgba(0, 0, 0, .8)';
-        ctx.strokeStyle = '#9933ff';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(p.x + tremorX, p.y + tremorY, (this.currentRadius/3)*s, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        this.graphics.beginFill(0x000000, 0.8);
+        this.graphics.lineStyle(2, 0x9933ff, 1.0);
+        this.graphics.drawCircle(p.x + tremorX, p.y + tremorY, (this.currentRadius/3)*s);
+        this.graphics.endFill();
         
-        ctx.strokeStyle = `rgba(153, 51, 255, ${Math.random()})`;
-        ctx.beginPath(); ctx.arc(p.x + tremorX, p.y + tremorY, this.currentRadius*s, 0, Math.PI*2); ctx.stroke();
+        this.graphics.lineStyle(1, 0x9933ff, Math.random());
+        this.graphics.drawCircle(p.x + tremorX, p.y + tremorY, this.currentRadius*s);
     }
 }
 
@@ -1695,12 +1803,15 @@ class WarpTrail {
             }
         }
         if (this.life <= 0) {
-            if(this.graphics) this.graphics.destroy();
+            if(this.graphics) {
+                this.graphics.destroy();
+                this.graphics = null;
+            }
             return true;
         }
         return false;
     }
-    draw(ctx) {
+    draw() {
         if (!this.graphics) return;
         this.graphics.clear();
         let p1 = project(this.x1, this.y1, this.z);
@@ -1708,7 +1819,7 @@ class WarpTrail {
         if (!p1 || !p2) return;
         
         let progress = this.life / this.maxLife;
-        let c = PIXI.utils.string2hex(this.color);
+        let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
         this.graphics.lineStyle(this.width * getScale(this.z) * progress, c, progress * 0.3);
         this.graphics.moveTo(p1.x, p1.y);
         this.graphics.lineTo(p2.x, p2.y);
@@ -1764,13 +1875,16 @@ class Drop {
                     text += '\n' + this.item.statLines.join('\n');
                 }
                 createFloatingText(text, this.x, this.y, this.color, 3.0, true);
-                if (this.sprite) this.sprite.destroy();
+                if (this.sprite) {
+                    this.sprite.destroy();
+                    this.sprite = null;
+                }
                 return true;
             }
         }
         return false;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if (this.sprite) this.sprite.visible = false;
@@ -1823,12 +1937,15 @@ class XpOrb {
 
         if (dist < player.radius + this.radius + 15) {
             player.gainXp(this.xpValue);
-            if (this.sprite) this.sprite.destroy();
+            if (this.sprite) {
+                this.sprite.destroy();
+                this.sprite = null;
+            }
             return true; // remove orb
         }
         return false;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if (this.sprite) this.sprite.visible = false;
@@ -1880,12 +1997,15 @@ class HpOrb {
             player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healAmount);
             createFloatingText("+10% HP", this.x, this.y, '#00ff66', 1.5, true);
             updateUI();
-            if (this.sprite) this.sprite.destroy();
+            if (this.sprite) {
+                this.sprite.destroy();
+                this.sprite = null;
+            }
             return true; // remove orb
         }
         return false;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
             if (this.sprite) this.sprite.visible = false;
@@ -1911,6 +2031,9 @@ class Particle {
         this.maxLife = life;
         this.type = type;
 
+        this.pixiObj = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.pixiObj);
+
         if (this.type === 'lightning') {
             this.vx = 0; this.vy = 0; this.vz = 0;
             this.points = [{x: 0, y: 0}];
@@ -1921,44 +2044,50 @@ class Particle {
                 curY += MathUtils.rand(-15, 15);
                 this.points.push({x: curX, y: curY});
             }
+        } else {
+            let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
+            this.pixiObj.beginFill(c);
+            this.pixiObj.drawEllipse(0, 0, 4, 1.5);
+            this.pixiObj.endFill();
         }
     }
     update(dt) {
         this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
         this.life -= dt;
         if (this.life <= 0) {
-            if (this.sprite) this.sprite.destroy();
-            if (this.graphics) this.graphics.destroy();
+            if (this.pixiObj) {
+                this.pixiObj.destroy();
+                this.pixiObj = null;
+            }
             return true;
         }
         return false;
     }
     draw() {
+        if (!this.pixiObj) return;
         let p = project(this.x, this.y, this.z);
         if(!p) {
-            if (this.sprite) this.sprite.visible = false;
-            if (this.graphics) this.graphics.visible = false;
+            this.pixiObj.visible = false;
             return;
         }
+        
+        this.pixiObj.visible = true;
         let s = getScale(this.z);
-        let alpha = Math.max(0, this.life / this.maxLife);
+        this.pixiObj.alpha = Math.max(0, this.life / this.maxLife);
+        this.pixiObj.zIndex = this.z;
         
         if (this.type === 'lightning') {
-            this.graphics.visible = true;
-            this.graphics.clear();
-            this.graphics.lineStyle({width: 2 * s, color: parseColor(this.color), alpha: alpha});
-            this.graphics.moveTo(p.x, p.y);
+            this.pixiObj.clear();
+            let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
+            this.pixiObj.lineStyle(2 * s, c, 1.0);
+            this.pixiObj.moveTo(p.x, p.y);
             for(let i=1; i<this.points.length; i++) {
-                this.graphics.lineTo(p.x + this.points[i].x * s, p.y + this.points[i].y * s);
+                this.pixiObj.lineTo(p.x + this.points[i].x * s, p.y + this.points[i].y * s);
             }
-            this.graphics.zIndex = this.z;
         } else {
-            this.sprite.visible = true;
-            this.sprite.position.set(p.x, p.y);
-            this.sprite.rotation = Math.atan2(this.vy, this.vx);
-            this.sprite.scale.set(s);
-            this.sprite.alpha = alpha;
-            this.sprite.zIndex = this.z;
+            this.pixiObj.position.set(p.x, p.y);
+            this.pixiObj.rotation = Math.atan2(this.vy, this.vx);
+            this.pixiObj.scale.set(s);
         }
     }
 }
@@ -1991,36 +2120,52 @@ class FloatingText {
             this.vx = 0; this.vy = -20;
         }
         
-        this.container = new PIXI.Container();
-        let lines = text.split('\n');
-        let startY = 0;
-        let c = parseColor(color);
+        this.pixiObj = new PIXI.Container();
+        let lines = this.text.split('\n');
         
         for(let j=0; j<lines.length; j++) {
-            let size = (this.isLoot && j > 0) ? 14 : (this.isLoot && j === 0 ? 18 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
-            let style = new PIXI.TextStyle({
+            let size = (this.isLoot && j > 0) ? 11 : (this.isLoot && j === 0 ? 16 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
+            let styleObj = {
                 fontFamily: 'Orbitron',
                 fontSize: size,
                 fontWeight: 'bold',
-                fontStyle: this.isCrit ? 'italic' : 'normal',
-                fill: this.isCrit ? '#ffffff' : c,
-                stroke: this.isCrit ? c : undefined,
-                strokeThickness: this.isCrit ? 4 : 0,
-                dropShadow: !this.isCrit,
-                dropShadowColor: '#000000',
-                dropShadowBlur: 4,
-                dropShadowDistance: 2
-            });
-            let t = new PIXI.Text(lines[j], style);
-            t.anchor.set(0.5, 0);
-            t.y = startY;
-            startY += size + 4;
-            this.container.addChild(t);
+                fill: this.color,
+                align: 'center'
+            };
+            if (this.isCrit) {
+                styleObj.fontStyle = 'italic';
+                styleObj.dropShadow = true;
+                styleObj.dropShadowColor = this.color;
+                styleObj.dropShadowBlur = 10;
+                styleObj.dropShadowDistance = 0;
+                styleObj.fill = '#ffffff';
+                styleObj.stroke = this.color;
+                styleObj.strokeThickness = 2;
+            } else {
+                styleObj.dropShadow = true;
+                styleObj.dropShadowColor = '#000000';
+                styleObj.dropShadowDistance = 2;
+                styleObj.dropShadowBlur = 0;
+                styleObj.fill = this.color;
+            }
+
+            let textSprite = new PIXI.Text(lines[j], styleObj);
+            textSprite.anchor.set(0.5, 0);
+            textSprite.y = j * (size + 4);
+            this.pixiObj.addChild(textSprite);
         }
-        GAME.layers.ui.addChild(this.container);
+        
+        GAME.layers.ui.addChild(this.pixiObj);
     }
     update(dt) {
         this.life -= dt;
+        if (this.life <= 0) {
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
+            return true;
+        }
         if (this.isLoot) {
             let speedSq = this.vx*this.vx + this.vy*this.vy;
             if (speedSq > 10) { // Lower threshold to allow it to glide further
@@ -2034,44 +2179,21 @@ class FloatingText {
             this.x += this.vx * dt;
             this.y += this.vy * dt;
         }
+        return false;
     }
-    draw(ctx) {
+    draw() {
+        if (!this.pixiObj) return;
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
+        if(!p) {
+            this.pixiObj.visible = false;
+            return;
+        }
+        this.pixiObj.visible = true;
+        this.pixiObj.position.set(p.x, p.y);
         
-        let lines = this.text.split('\n');
-        ctx.fillStyle = this.color;
-        ctx.textAlign = 'center';
-        
-        // Smooth fade out in the last half-second
         let alpha = 1.0;
         if(this.life < 0.5) alpha = this.life / 0.5;
-        ctx.globalAlpha = Math.max(0, alpha);
-        
-        for(let j=0; j<lines.length; j++) {
-            // Smaller size for Loot Title, slightly bigger for damage
-            let size = (this.isLoot && j > 0) ? 11 : (this.isLoot && j === 0 ? 16 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
-            ctx.font = this.isCrit ? `italic bold ${size}px Orbitron` : `bold ${size}px Orbitron`;
-            
-            if (this.isCrit) {
-                ctx.shadowColor = this.color;
-                ctx.shadowBlur = 10;
-                ctx.fillStyle = '#fff';
-                ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
-                
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 2;
-                ctx.shadowBlur = 0;
-                ctx.strokeText(lines[j], p.x, p.y + j * (size + 4));
-            } else {
-                // Replaced shadowBlur with a much faster manual drop shadow
-                ctx.fillStyle = 'black';
-                ctx.fillText(lines[j], p.x + 2, p.y + j * (size + 4) + 2);
-                ctx.fillStyle = this.color;
-                ctx.fillText(lines[j], p.x, p.y + j * (size + 4));
-            }
-        }
-        ctx.globalAlpha = 1.0;
+        this.pixiObj.alpha = Math.max(0, alpha);
     }
 }
 
@@ -2089,12 +2211,15 @@ class Shockwave {
     update(dt) {
         this.life -= dt;
         if (this.life <= 0) {
-            if (this.graphics) this.graphics.destroy();
+            if (this.graphics) {
+                this.graphics.destroy();
+                this.graphics = null;
+            }
             return true;
         }
         return false;
     }
-    draw(ctx) {
+    draw() {
         if (!this.graphics) return;
         this.graphics.clear();
         let p = project(this.x, this.y, this.z);
@@ -2103,7 +2228,7 @@ class Shockwave {
         let s = getScale(this.z);
         let progress = 1 - (this.life / this.maxLife);
         let alpha = 1 - progress;
-        let c = PIXI.utils.string2hex(this.color);
+        let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
         
         this.graphics.lineStyle(3 * s * (this.life / this.maxLife), c, alpha);
         this.graphics.drawCircle(p.x, p.y, progress * this.maxRadius * s);

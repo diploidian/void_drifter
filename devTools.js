@@ -22,13 +22,16 @@ const devSettings = {
     },
     lootGen: () => {
         // Generate 3 Rare (Tier 3), 3 Epic (Tier 4), and 3 Legendary (Tier 5)
-        for (let i = 0; i < 3; i++) spawnDrop(player.x + MathUtils.rand(-100, 100), player.y + MathUtils.rand(-100, 100), false, generateLoot(null, 3));
-        for (let i = 0; i < 3; i++) spawnDrop(player.x + MathUtils.rand(-100, 100), player.y + MathUtils.rand(-100, 100), false, generateLoot(null, 4));
+/*         for (let i = 0; i < 3; i++) spawnDrop(player.x + MathUtils.rand(-100, 100), player.y + MathUtils.rand(-100, 100), false, generateLoot(null, 3));
+        for (let i = 0; i < 3; i++) spawnDrop(player.x + MathUtils.rand(-100, 100), player.y + MathUtils.rand(-100, 100), false, generateLoot(null, 4)); */
         for (let i = 0; i < 3; i++) spawnDrop(player.x + MathUtils.rand(-100, 100), player.y + MathUtils.rand(-100, 100), false, generateLoot(null, 5));
     },
     clearLoot: () => {
         for (let d of drops) {
-            if (d.sprite) d.sprite.destroy();
+            if (d.sprite) {
+                d.sprite.destroy();
+                d.sprite = null;
+            }
         }
         drops.length = 0; // instantly clear all drops off the map
     },

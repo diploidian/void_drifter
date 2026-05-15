@@ -58,11 +58,25 @@ function drawGrid() {
  * MAIN GAME LOOP & LOGIC
  * ========================================== */
 function initPixi() {
+    miniCanvas = document.getElementById('minimap');
+    if (miniCanvas) {
+        GAME.minimapApp = new PIXI.Application({
+            view: miniCanvas,
+            width: 200,
+            height: 200,
+            backgroundColor: 0x050508,
+            antialias: false
+        });
+        GAME.minimapGraphics = new PIXI.Graphics();
+        GAME.minimapApp.stage.addChild(GAME.minimapGraphics);
+    }
     GAME.pixiApp = new PIXI.Application({
         width: window.innerWidth,
         height: window.innerHeight,
         backgroundColor: 0x050508, 
-        resizeTo: window
+        resizeTo: window,
+        antialias: true,
+        preference: 'webgl'
     });
     document.getElementById('pixi-container').appendChild(GAME.pixiApp.view);
 
@@ -396,7 +410,10 @@ function update(dt) {
         }
     } else if (player.activeWhipBeam) {
         player.activeWhipBeam.dead = true;
-        if(player.activeWhipBeam.graphics) player.activeWhipBeam.graphics.destroy();
+        if(player.activeWhipBeam.graphics) {
+            player.activeWhipBeam.graphics.destroy();
+            player.activeWhipBeam.graphics = null;
+        }
         player.activeWhipBeam = null;
     }
     
@@ -746,22 +763,25 @@ function draw() {
 }
 
 function drawMinimap() {
-    let w = miniCanvas.width = 200;
-    let h = miniCanvas.height = 200;
-    
-    miniCtx.fillStyle = '#050508';
-    miniCtx.fillRect(0,0,w,h);
+    if (!GAME.minimapGraphics) return;
+
+    let g = GAME.minimapGraphics;
+    g.clear();
+
+    let w = 200;
+    let h = 200;
     
     let mapScale = w / (WORLD_SIZE * 2);
     
     // Draw FOW & Radar
-    miniCtx.fillStyle = 'rgba(255,255,255,0.1)';
+    g.beginFill(0xffffff, 0.1);
     for(let [key, val] of GAME.fowMap) {
         let parts = key.split(',');
         let cx = (parseInt(parts[0]) * 200 + WORLD_SIZE) * mapScale;
         let cy = (parseInt(parts[1]) * 200 + WORLD_SIZE) * mapScale;
-        miniCtx.fillRect(cx, cy, 200*mapScale, 200*mapScale);
+        g.drawRect(cx, cy, 200*mapScale, 200*mapScale);
     }
+    g.endFill();
     
     // Entities on minimap
     for(let e of entities) {
@@ -769,19 +789,21 @@ function drawMinimap() {
         let my = (e.y + WORLD_SIZE) * mapScale;
         if(mx<0 || mx>w || my<0 || my>h) continue;
         
-        if(e instanceof Asteroid) { miniCtx.fillStyle = '#555'; miniCtx.fillRect(mx-1, my-1, 2, 2); }
-        if(e instanceof Enemy) { miniCtx.fillStyle = '#f00'; miniCtx.fillRect(mx-1, my-1, 3, 3); }
+        if(e instanceof Asteroid) { g.beginFill(0x555555); g.drawRect(mx-1, my-1, 2, 2); g.endFill(); }
+        if(e instanceof Enemy) { g.beginFill(0xff0000); g.drawRect(mx-1, my-1, 3, 3); g.endFill(); }
     }
     
     // Player
     let px = (player.x + WORLD_SIZE) * mapScale;
     let py = (player.y + WORLD_SIZE) * mapScale;
-    miniCtx.fillStyle = varColor('--accent');
-    miniCtx.beginPath(); miniCtx.arc(px, py, 3, 0, Math.PI*2); miniCtx.fill();
+    let accentHex = parseColor(varColor('--accent'));
+    g.beginFill(accentHex);
+    g.drawCircle(px, py, 3);
+    g.endFill();
     
     // Radar circle
-    miniCtx.strokeStyle = 'rgba(0, 210, 255, 0.3)';
-    miniCtx.beginPath(); miniCtx.arc(px, py, 800 * mapScale, 0, Math.PI*2); miniCtx.stroke();
+    g.lineStyle(1, 0x00d2ff, 0.3);
+    g.drawCircle(px, py, 800 * mapScale);
 }
 
 function varColor(name) {
@@ -803,8 +825,8 @@ function loop(timestamp) {
  * INPUT LISTENERS
  * ========================================== */
 window.addEventListener('resize', () => {
-    cw = canvas.width = window.innerWidth;
-    ch = canvas.height = window.innerHeight;
+    cw = window.innerWidth;
+    ch = window.innerHeight;
 });
 window.addEventListener('keydown', e => {
     let k = e.key.toLowerCase();

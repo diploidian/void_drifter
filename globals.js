@@ -111,8 +111,9 @@ window.parseColor = parseColor;
 /** ==========================================
  * GAME CONSTANTS & GLOBALS
  * ========================================== */
-const miniCanvas = document.getElementById('minimap');
-const miniCtx = miniCanvas.getContext('2d');
+/* const miniCanvas = document.getElementById('minimap');
+const miniCtx = miniCanvas.getContext('2d'); */
+let miniCanvas;
 
 var cw = window.innerWidth;
 var ch = window.innerHeight;
