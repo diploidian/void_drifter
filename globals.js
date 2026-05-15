@@ -92,16 +92,30 @@ function calculateCrit(amount, source) {
     return { amount, isCrit };
 }
 
+function parseColor(colorStr) {
+    if (!colorStr) return 0xffffff;
+    colorStr = colorStr.trim();
+    if (colorStr.startsWith('#')) {
+        let hex = colorStr.replace('#', '');
+        if(hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+        return parseInt(hex, 16);
+    }
+    if (colorStr.startsWith('rgb')) {
+        let p = colorStr.match(/\d+/g);
+        if (p && p.length >= 3) return (parseInt(p[0]) << 16) + (parseInt(p[1]) << 8) + parseInt(p[2]);
+    }
+    return 0xffffff;
+}
+window.parseColor = parseColor;
+
 /** ==========================================
  * GAME CONSTANTS & GLOBALS
  * ========================================== */
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
 const miniCanvas = document.getElementById('minimap');
 const miniCtx = miniCanvas.getContext('2d');
 
-let cw = canvas.width = window.innerWidth;
-let ch = canvas.height = window.innerHeight;
+var cw = window.innerWidth;
+var ch = window.innerHeight;
 
 const WORLD_SIZE = 4000; // -2000 to +2000
 const FOCAL_LENGTH = 800; // For Z-axis perspective
@@ -109,6 +123,9 @@ const FOCAL_LENGTH = 800; // For Z-axis perspective
 const GAME = {
     state: 'PLAYING', // PLAYING, INVENTORY, DEAD
     lastTime: 0,
+    pixiApp: null,
+    layers: {},
+    textures: {},
     camera: { x: 0, y: 0, zoom: 1.0 },
     bossSpawned: false,
     activeBoss: null,
@@ -158,7 +175,7 @@ function getIcon(type, color) {
     else if(type === 'Upgrade Material') path = '<polygon points="12 2 22 12 12 22 2 12"/>';
     else path = '<polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>'; // Resource
     
-    let rawSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${path}</svg>`;
+    let rawSvg = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${path}</svg>`;
     
     // Properly encode for Canvas Image src
     let encodedSvg = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(rawSvg);
@@ -172,15 +189,15 @@ function getIcon(type, color) {
 /** ==========================================
  * ENTITIES & MANAGERS
  * ========================================== */
-let entities = [];
-let particles = [];
-let projectiles = [];
-let drops = [];
-let floatingTexts = [];
-let xpOrbs = [];
-let hpOrbs = [];
-let shockwaves = [];
-let warpTrails = [];
-let mycelialLoops = [];
+var entities = [];
+var particles = [];
+var projectiles = [];
+var drops = [];
+var floatingTexts = [];
+var xpOrbs = [];
+var hpOrbs = [];
+var shockwaves = [];
+var warpTrails = [];
+var mycelialLoops = [];
 
 const HP_ORB_DROP_RATE = 0.08;

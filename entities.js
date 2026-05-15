@@ -16,8 +16,10 @@ class Asteroid {
         this.rotation = 0;
         this.rotSpeed = MathUtils.rand(-1, 1) * 0.02;
         this.collisionDamageMult = 0.05;
+        this.flashTimer = 0;
     }
     update(dt) {
+        if (this.flashTimer > 0) this.flashTimer -= dt;
         this.x += this.vx * dt; this.y += this.vy * dt;
         this.rotation += this.rotSpeed;
         
@@ -45,59 +47,40 @@ class Asteroid {
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        
-        let scale = getScale(this.z);
-        
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(scale, scale);
-        ctx.rotate(this.rotation);
-        
-        // Draw bottom layer (depth)
-        ctx.fillStyle = '#111';
-        ctx.beginPath();
-        for(let i=0; i<this.points.length; i++) {
-            let pt = this.points[i];
-            if(i===0) ctx.moveTo(pt.x, pt.y + 15);
-            else ctx.lineTo(pt.x, pt.y + 15);
+        if(!p) {
+            if (this.pixiObj) this.pixiObj.visible = false;
+            return;
         }
-        ctx.closePath();
-        ctx.fill();
+        if (this.pixiObj) {
+            this.pixiObj.visible = true;
+            let scale = getScale(this.z);
+            this.pixiObj.position.set(p.x, p.y);
+            this.pixiObj.scale.set(scale);
+            this.body.rotation = this.rotation;
+            this.pixiObj.zIndex = this.z;
 
-        // Draw top layer
-        ctx.fillStyle = '#222';
-        ctx.strokeStyle = '#555';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for(let i=0; i<this.points.length; i++) {
-            let pt = this.points[i];
-            if(i===0) ctx.moveTo(pt.x, pt.y);
-            else ctx.lineTo(pt.x, pt.y);
+            this.body.tint = this.flashTimer > 0 ? 0xffaaaa : 0xffffff;
+
+            this.hpBar.clear();
+            if(this.hp < this.maxHp) {
+                this.hpBar.beginFill(0xff0000);
+                this.hpBar.drawRect(-this.radius, -this.radius - 10, this.radius*2, 4);
+                this.hpBar.beginFill(0x00ff00);
+                this.hpBar.drawRect(-this.radius, -this.radius - 10, (this.radius*2) * (this.hp/this.maxHp), 4);
+                this.hpBar.endFill();
+            }
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        
-        // HP bar if damaged
-        if(this.hp < this.maxHp) {
-            ctx.rotate(-this.rotation); // unrotate for HP bar
-            ctx.fillStyle = 'red';
-            ctx.fillRect(-this.radius, -this.radius - 10, this.radius*2, 4);
-            ctx.fillStyle = 'green';
-            ctx.fillRect(-this.radius, -this.radius - 10, (this.radius*2) * (this.hp/this.maxHp), 4);
-        }
-        
-        ctx.restore();
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
+        this.flashTimer = 0.1;
         let critInfo = calculateCrit(amount, source);
         amount = critInfo.amount;
         this.hp -= amount;
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
+            if (this.pixiObj) this.pixiObj.destroy();
 
             createParticles(this.x, this.y, this.z, 20, '#555');
             // Drop loot
@@ -166,6 +149,38 @@ class Enemy {
             this.knockbackVy = 0;
         }
         this.color = this.type === 'chaser' ? '#ff0055' : '#00ffcc';
+        
+        this.flashTimer = 0;
+        this.baseTint = this.type === 'chaser' ? 0xff0055 : (this.type === 'boss' ? 0xff4400 : 0x00ffcc);
+        
+        this.pixiObj = new PIXI.Container();
+        this.body = new PIXI.Graphics();
+        
+        if (this.type === 'chaser') {
+            this.body.beginFill(0x000000, 0.8);
+            this.body.lineStyle(2, 0xffffff);
+            this.body.moveTo(15, 0); this.body.lineTo(-10, 10); this.body.lineTo(-5, 0); this.body.lineTo(-10, -10); this.body.closePath();
+            this.body.endFill();
+            
+            this.comboOverlay = new PIXI.Graphics();
+            this.comboOverlay.beginFill(0xffffff, 1.0);
+            this.comboOverlay.moveTo(15, 0); this.comboOverlay.lineTo(-10, 10); this.comboOverlay.lineTo(-5, 0); this.comboOverlay.lineTo(-10, -10); this.comboOverlay.closePath();
+            this.comboOverlay.endFill();
+            this.comboOverlay.visible = false;
+            
+            this.pixiObj.addChild(this.body, this.comboOverlay);
+        } else {
+            this.body.beginFill(0x000000, 0.8);
+            this.body.lineStyle(2, 0xffffff);
+            this.body.drawCircle(0, 0, this.radius);
+            this.body.moveTo(0,0); this.body.lineTo(15, 0);
+            this.body.endFill();
+            this.pixiObj.addChild(this.body);
+        }
+
+        this.body.tint = this.baseTint;
+        
+        GAME.layers.game.addChild(this.pixiObj);
     }
     update(dt) {
         // Z-axis entrance
@@ -174,6 +189,8 @@ class Enemy {
             if(this.z <= 0) { this.z = 0; this.vz = 0; }
             return; // don't act while spawning
         }
+        
+        if (this.flashTimer > 0) this.flashTimer -= dt;
         
         if (this.stunTimer > 0) {
             this.stunTimer -= dt;
@@ -275,6 +292,9 @@ class Enemy {
                 else {
                     projectiles.push(new Projectile(this.x, this.y, angle, 200, getDamage(this) * this.shooterDamageMult, false, this.color, this));
                     this.attackTimer = 2.0;
+        
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
                 }
             }
         }
@@ -285,58 +305,72 @@ class Enemy {
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let scale = getScale(this.z);
-        
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(scale, scale);
-        
-        if (this.type === 'chaser') {
-            ctx.strokeStyle = 'rgba(255,0,85,0.2)';
-            ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.arc(0,0,20,0,Math.PI*2); ctx.stroke();
+        if(!p) {
+            if(this.pixiObj) this.pixiObj.visible = false;
+            return;
         }
-
-        let angle = Math.atan2(this.vy, this.vx);
-        ctx.rotate(angle);
         
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.strokeStyle = this.stunTimer > 0 ? '#ffff00' : this.color;
-        ctx.lineWidth = 2;
-
-        if (this.type === 'chaser' && this.attackCombo > 0) {
-            let comboColor = 'transparent';
-            if (this.attackCombo === 1) comboColor = 'rgba(255,0,0,0.5)';
-            else if (this.attackCombo === 2) comboColor = 'rgba(255,128,0,0.5)';
-            else if (this.attackCombo === 3) {
-                let t = (Math.sin(Date.now() / 100) + 1) / 2;
-                let g = Math.floor(128 + 127 * t);
-                comboColor = `rgba(255,${g},0,0.7)`;
+        if (this.pixiObj) {
+            this.pixiObj.visible = true;
+            let scale = getScale(this.z);
+            this.pixiObj.position.set(p.x, p.y);
+            this.pixiObj.scale.set(scale);
+            this.pixiObj.zIndex = this.z;
+            
+            let overrideAngle = null;
+            if (this.blackHole) {
+                let bhDist = MathUtils.distance(this.x, this.y, this.blackHole.x, this.blackHole.y);
+                if (bhDist < 30) {
+                    this.pixiObj.visible = false;
+                } else {
+                    let normalizedDist = Math.max(0, 1 - (bhDist / this.blackHole.currentRadius));
+                    let stretch = 1 + Math.pow(normalizedDist, 3) * 4;
+                    this.pixiObj.scale.set(scale * stretch, scale / stretch);
+                    overrideAngle = MathUtils.angle(this.x, this.y, this.blackHole.x, this.blackHole.y);
+                }
             }
-            ctx.fillStyle = comboColor;
+
+            let angle = overrideAngle !== null ? overrideAngle : Math.atan2(this.vy, this.vx);
+            this.body.rotation = angle;
+            
+            if (this.type === 'chaser') {
+                if (this.comboOverlay) {
+                    this.comboOverlay.rotation = angle;
+                    if (this.attackCombo > 0) {
+                        this.comboOverlay.visible = true;
+                        if (this.attackCombo === 1) { this.comboOverlay.tint = 0xff0000; this.comboOverlay.alpha = 0.5; }
+                        else if (this.attackCombo === 2) { this.comboOverlay.tint = 0xff8000; this.comboOverlay.alpha = 0.5; }
+                        else if (this.attackCombo === 3) {
+                            let t = (Math.sin(Date.now() / 100) + 1) / 2;
+                            let g = Math.floor(128 + 127 * t);
+                            this.comboOverlay.tint = PIXI.utils.rgb2hex([1.0, g/255, 0]);
+                            this.comboOverlay.alpha = 0.7;
+                        }
+                    } else {
+                        this.comboOverlay.visible = false;
+                    }
+                }
+            }
+
+            if (this.flashTimer > 0) {
+                this.body.tint = 0xffffff;
+            } else if (this.stunTimer > 0) {
+                this.body.tint = 0xffff00;
+            } else {
+                this.body.tint = this.baseTint;
+            }
         }
-        
-        ctx.beginPath();
-        if(this.type === 'chaser') {
-            ctx.moveTo(15, 0); ctx.lineTo(-10, 10); ctx.lineTo(-5, 0); ctx.lineTo(-10, -10);
-        } else {
-            ctx.arc(0, 0, this.radius, 0, Math.PI*2);
-            ctx.moveTo(0,0); ctx.lineTo(15, 0); // barrel
-        }
-        ctx.closePath();
-        ctx.fill(); ctx.stroke();
-        
-        ctx.restore();
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
+        this.flashTimer = 0.1;
         let critInfo = calculateCrit(amount, source);
         amount = critInfo.amount;
         this.hp -= amount;
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
+            if (this.pixiObj) this.pixiObj.destroy();
             player.totalKills++;
             player.killsThisLevel++;
 
@@ -392,9 +426,28 @@ class FungalNode {
         // If part of a structured network, live indefinitely until replaced by Spreader
         this.life = networkId !== null ? 999999 : 15.0; 
         this.links = []; // Connected Mycelial nodes
+        this.flashTimer = 0;
+        
+        this.pixiObj = new PIXI.Container();
+        this.linksGraphics = new PIXI.Graphics();
+        this.body = new PIXI.Graphics();
+        
+        this.body.beginFill(0x223311);
+        this.body.lineStyle(2, 0xffffff); // White line to tint
+        this.body.drawCircle(0, 0, this.radius);
+        this.body.endFill();
+        
+        this.core = new PIXI.Graphics();
+        this.core.beginFill(0x99ff33);
+        this.core.drawCircle(0, 0, this.radius * 0.5);
+        this.core.endFill();
+        
+        this.pixiObj.addChild(this.linksGraphics, this.body, this.core);
+        GAME.layers.game.addChild(this.pixiObj);
     }
     update(dt) {
         if (this.dead) return true;
+        if (this.flashTimer > 0) this.flashTimer -= dt;
         this.pulseTimer += dt;
         this.life -= dt;
         
@@ -428,41 +481,50 @@ class FungalNode {
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let s = getScale(this.z);
+        if(!p) {
+            if(this.pixiObj) this.pixiObj.visible = false;
+            return;
+        }
         
-        // Draw Links
-        ctx.strokeStyle = `rgba(153, 255, 51, ${0.4 + 0.2 * Math.sin(this.pulseTimer * 3)})`;
-        ctx.lineWidth = 2 * s;
-        ctx.beginPath();
-        for (let e of this.links) {
-            let p2 = project(e.x, e.y, e.z);
-            if (p2 && (e.x > this.x || (e.x === this.x && e.y > this.y))) { // Avoids double-drawing the same link back and forth
-                ctx.moveTo(p.x, p.y);
-                ctx.lineTo(p2.x, p2.y);
+        if (this.pixiObj) {
+            this.pixiObj.visible = true;
+            let scale = getScale(this.z);
+            this.pixiObj.position.set(p.x, p.y);
+            this.pixiObj.scale.set(scale);
+            this.pixiObj.zIndex = this.z;
+            
+            let pulse = 1 + 0.1 * Math.sin(this.pulseTimer * 5);
+            this.body.scale.set(pulse);
+            this.core.scale.set(pulse);
+            this.core.alpha = 0.5 + 0.5 * Math.sin(this.pulseTimer * 5);
+            
+            this.body.tint = this.flashTimer > 0 ? 0xffffff : 0x99ff33;
+            
+            this.linksGraphics.clear();
+            let linkAlpha = 0.4 + 0.2 * Math.sin(this.pulseTimer * 3);
+            this.linksGraphics.lineStyle(2, 0x99ff33, linkAlpha);
+            
+            for (let e of this.links) {
+                let p2 = project(e.x, e.y, e.z);
+                if (p2 && (e.x > this.x || (e.x === this.x && e.y > this.y))) {
+                    let localX = (p2.x - p.x) / scale;
+                    let localY = (p2.y - p.y) / scale;
+                    this.linksGraphics.moveTo(0, 0);
+                    this.linksGraphics.lineTo(localX, localY);
+                }
             }
         }
-        ctx.stroke();
-        
-        // Draw Node
-        ctx.fillStyle = '#223311';
-        ctx.strokeStyle = '#99ff33';
-        ctx.lineWidth = 2 * s;
-        let pulse = 1 + 0.1 * Math.sin(this.pulseTimer * 5);
-        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-        
-        // Inner glowing core
-        ctx.fillStyle = `rgba(153, 255, 51, ${0.5 + 0.5 * Math.sin(this.pulseTimer * 5)})`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * 0.5 * s * pulse, 0, Math.PI*2); ctx.fill();
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
+        this.flashTimer = 0.1;
         let critInfo = calculateCrit(amount, source);
         amount = critInfo.amount;
         this.hp -= amount;
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
+            if (this.pixiObj) this.pixiObj.destroy();
             createParticles(this.x, this.y, 0, 20, '#99ff33');
             if (Math.random() < 0.2) xpOrbs.push(new XpOrb(this.x, this.y, this.level * 2));
             if (Math.random() < HP_ORB_DROP_RATE) hpOrbs.push(new HpOrb(this.x, this.y));
@@ -497,6 +559,28 @@ class MycelialSpreader extends Enemy {
         this.networkPhase = 'IDLE'; 
         this.networkCounter = 0;
         this.currentNetworkId = null;
+
+        this.baseTint = 0xaf8123;
+        this.pixiObj.removeChild(this.body);
+        if(this.comboOverlay) this.comboOverlay.destroy();
+        this.body.destroy();
+        
+        this.body = new PIXI.Graphics();
+        this.body.beginFill(0x000000, 0.8);
+        this.body.lineStyle(2, 0xffffff);
+        this.body.drawCircle(0, 0, this.radius);
+        this.body.moveTo(0,0); this.body.lineTo(15, 0);
+        this.body.endFill();
+        this.body.tint = this.baseTint;
+        
+        this.bioSpots = new PIXI.Graphics();
+        this.bioSpots.beginFill(0x99ff33, 1.0);
+        this.bioSpots.drawCircle(0, 0, 6);
+        this.bioSpots.drawCircle(-10, 8, 3);
+        this.bioSpots.drawCircle(-10, -8, 3);
+        this.bioSpots.endFill();
+
+        this.pixiObj.addChild(this.body, this.bioSpots);
     }
     update(dt) {
         if(this.z > 0) {
@@ -599,27 +683,23 @@ class MycelialSpreader extends Enemy {
     }
     draw(ctx) {
         super.draw(ctx);
-        // Add bioluminescent spots
-        let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let scale = getScale(this.z);
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(scale, scale);
-        ctx.rotate(Math.atan2(this.vy, this.vx));
-        
-        let pulse = (Math.sin(Date.now() / 200) + 1) / 2;
-        ctx.fillStyle = `rgba(153, 255, 51, ${0.3 + 0.7 * pulse})`;
-        ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(-10, 8, 3, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(-10, -8, 3, 0, Math.PI*2); ctx.fill();
-        ctx.restore();
+        if (this.pixiObj && this.bioSpots) {
+            let pulse = (Math.sin(Date.now() / 200) + 1) / 2;
+            this.bioSpots.alpha = 0.3 + 0.7 * pulse;
+            this.bioSpots.rotation = this.body.rotation;
+        }
     }
 }
 
 class BrutalistMonolith extends Asteroid {
     constructor(x, y, level, damage = 0, source = null) {
         super(x, y, 35); // Fixed 35 radius for precision trap
+        
+        if (this.pixiObj) {
+            this.pixiObj.destroy();
+            this.pixiObj = null;
+        }
+
         this.vx = 0; 
         this.vy = 0; 
         this.baseXp = 2;
@@ -630,84 +710,94 @@ class BrutalistMonolith extends Asteroid {
         this.telegraphTimer = 1.5;
         this.damage = damage;
         this.source = source;
+        
+        this.pixiObj = new PIXI.Container();
+        this.telegraphGraphics = new PIXI.Graphics();
+        this.body = new PIXI.Graphics();
+        this.hpBar = new PIXI.Graphics();
+        
+        this.body.beginFill(0x2a2a2a);
+        this.body.lineStyle(2, 0x444444);
+        this.body.drawEllipse(0, 0, this.radius, this.radius * 0.4);
+        this.body.endFill();
+        
+        this.body.beginFill(0x2a2a2a);
+        this.body.drawRect(-this.radius, -this.height, this.radius * 2, this.height);
+        this.body.endFill();
+        
+        this.body.lineStyle(2, 0x444444);
+        this.body.moveTo(-this.radius, 0); this.body.lineTo(-this.radius, -this.height);
+        this.body.moveTo(this.radius, 0); this.body.lineTo(this.radius, -this.height);
+        
+        this.body.beginFill(0x3a3a3a);
+        this.body.drawEllipse(0, -this.height, this.radius, this.radius * 0.4);
+        this.body.endFill();
+
+        this.body.beginFill(0xff3366);
+        this.body.lineStyle(0);
+        this.body.drawRect(-10, -this.height * 0.7, 20, 4);
+        this.body.drawRect(-10, -this.height * 0.4, 20, 4);
+        this.body.endFill();
+
+        this.body.visible = false; // Hidden while telegraphing
+        
+        this.pixiObj.addChild(this.telegraphGraphics, this.body, this.hpBar);
+        GAME.layers.game.addChild(this.pixiObj);
     }
     update(dt) {
+        if (this.flashTimer > 0) this.flashTimer -= dt;
+        if (this.telegraphTimer > 0) this.telegraphTimer -= dt;
+    }
+    draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let scale = getScale(this.z);
-        
-        if (this.telegraphTimer > 0) {
-            let progress = 1 - (this.telegraphTimer / 1.5);
-            let timeElapsed = 1.5 - this.telegraphTimer;
-            
-            // Ripple effect
-            let rippleCount = 3;
-            for (let i = 0; i < rippleCount; i++) {
-                let rProgress = (timeElapsed * (1 + progress * 2) + i / rippleCount) % 1.0;
-                ctx.strokeStyle = `rgba(255, 51, 102, ${1.0 - rProgress})`;
-                ctx.lineWidth = 2 * scale;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, this.radius * scale * rProgress, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-
-            // Target boundary
-            let freq = 10 + progress * 20; 
-            let pulse = (Math.sin(timeElapsed * freq) + 1) / 2;
-            
-            ctx.strokeStyle = `rgba(255, 51, 102, ${0.5 + 0.5 * pulse})`;
-            ctx.lineWidth = (2 + 2 * pulse) * scale;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, this.radius * scale, 0, Math.PI * 2);
-            ctx.stroke();
-            
-            // Growing red core
-            ctx.fillStyle = `rgba(255, 51, 102, ${progress * 0.4})`;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, this.radius * scale * progress, 0, Math.PI * 2);
-            ctx.fill();
-
+        if(!p) {
+            if(this.pixiObj) this.pixiObj.visible = false;
             return;
         }
         
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(scale, scale);
-        
-        ctx.fillStyle = '#2a2a2a';
-        ctx.strokeStyle = '#444';
-        ctx.lineWidth = 2;
+        if (this.pixiObj) {
+            this.pixiObj.visible = true;
+            let scale = getScale(this.z);
+            this.pixiObj.position.set(p.x, p.y);
+            this.pixiObj.scale.set(scale);
+            this.pixiObj.zIndex = this.z;
 
-        // Base shadow/ellipse
-        ctx.beginPath();
-        ctx.ellipse(0, 0, this.radius, this.radius * 0.4, 0, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
+            this.telegraphGraphics.clear();
+            if (this.telegraphTimer > 0) {
+                let progress = Math.max(0, 1 - (this.telegraphTimer / 1.5));
+                let timeElapsed = 1.5 - this.telegraphTimer;
+                
+                let rippleCount = 3;
+                for (let i = 0; i < rippleCount; i++) {
+                    let rProgress = (timeElapsed * (1 + progress * 2) + i / rippleCount) % 1.0;
+                    this.telegraphGraphics.lineStyle(2, 0xff3366, 1.0 - rProgress);
+                    this.telegraphGraphics.drawCircle(0, 0, this.radius * rProgress);
+                }
 
-        // Body extending upwards visually
-        ctx.fillRect(-this.radius, -this.height, this.radius * 2, this.height);
-        ctx.beginPath(); ctx.moveTo(-this.radius, 0); ctx.lineTo(-this.radius, -this.height); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(this.radius, 0); ctx.lineTo(this.radius, -this.height); ctx.stroke();
+                let freq = 10 + progress * 20; 
+                let pulse = (Math.sin(timeElapsed * freq) + 1) / 2;
+                this.telegraphGraphics.lineStyle(2 + 2 * pulse, 0xff3366, 0.5 + 0.5 * pulse);
+                this.telegraphGraphics.drawCircle(0, 0, this.radius);
+                
+                this.telegraphGraphics.beginFill(0xff3366, progress * 0.4);
+                this.telegraphGraphics.drawCircle(0, 0, this.radius * progress);
+                this.telegraphGraphics.endFill();
+                
+                this.body.visible = false;
+            } else {
+                this.body.visible = true;
+                this.body.tint = this.flashTimer > 0 ? 0xffaaaa : 0xffffff;
+            }
 
-        // Top ellipse
-        ctx.fillStyle = '#3a3a3a';
-        ctx.beginPath();
-        ctx.ellipse(0, -this.height, this.radius, this.radius * 0.4, 0, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
-
-        // Cyberpunk/brutalist accents
-        ctx.fillStyle = '#ff3366';
-        ctx.fillRect(-10, -this.height * 0.7, 20, 4);
-        ctx.fillRect(-10, -this.height * 0.4, 20, 4);
-        
-        // HP bar
-        if(this.hp < this.maxHp) {
-            ctx.fillStyle = 'red';
-            ctx.fillRect(-this.radius, -this.height - 15, this.radius*2, 4);
-            ctx.fillStyle = 'green';
-            ctx.fillRect(-this.radius, -this.height - 15, (this.radius*2) * (this.hp/this.maxHp), 4);
+            this.hpBar.clear();
+            if(this.hp < this.maxHp && this.telegraphTimer <= 0) {
+                this.hpBar.beginFill(0xff0000);
+                this.hpBar.drawRect(-this.radius, -this.height - 15, this.radius*2, 4);
+                this.hpBar.beginFill(0x00ff00);
+                this.hpBar.drawRect(-this.radius, -this.height - 15, (this.radius*2) * (this.hp/this.maxHp), 4);
+                this.hpBar.endFill();
+            }
         }
-        
-        ctx.restore();
     }
 }
 
@@ -729,6 +819,25 @@ class MonolithArchitect extends Enemy {
         
         this.summonTimer = 3.0; // Quick initial cast
         this.summonCooldown = 12.0;
+        
+        this.baseTint = 0x778899;
+        this.pixiObj.removeChild(this.body);
+        if(this.comboOverlay) this.comboOverlay.destroy();
+        this.body.destroy();
+        
+        this.body = new PIXI.Graphics();
+        this.body.beginFill(0x445566);
+        this.body.lineStyle(2, 0xffffff);
+        this.body.drawRect(-this.radius, -this.radius, this.radius*2, this.radius*2);
+        this.body.beginFill(0x223344);
+        this.body.lineStyle(0);
+        this.body.drawRect(-this.radius/2, -this.radius/2, this.radius, this.radius);
+        this.body.beginFill(0xffaa00);
+        this.body.drawCircle(this.radius/2, 0, 4);
+        this.body.endFill();
+        
+        this.body.tint = this.baseTint;
+        this.pixiObj.addChild(this.body);
     }
     update(dt) {
         if(this.z > 0) {
@@ -768,32 +877,7 @@ class MonolithArchitect extends Enemy {
         return false;
     }
     draw(ctx) {
-        let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let scale = getScale(this.z);
-        
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(scale, scale);
-        ctx.rotate(Math.atan2(this.vy, this.vx));
-        
-        // Heavy armor plating
-        ctx.fillStyle = '#445566';
-        ctx.strokeStyle = this.stunTimer > 0 ? '#ffff00' : this.color;
-        ctx.lineWidth = 2;
-        
-        ctx.beginPath();
-        ctx.rect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
-        ctx.fill(); ctx.stroke();
-        
-        ctx.fillStyle = '#223344';
-        ctx.fillRect(-this.radius/2, -this.radius/2, this.radius, this.radius);
-        
-        // Eye
-        ctx.fillStyle = '#ffaa00';
-        ctx.beginPath(); ctx.arc(this.radius/2, 0, 4, 0, Math.PI*2); ctx.fill();
-        
-        ctx.restore();
+        super.draw(ctx);
     }
 }
 
@@ -808,6 +892,9 @@ class Projectile {
         this.source = source;
         this.type = type;
         this.life = 2.0;
+
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
     }
     update(dt) {
         this.x += this.vx * dt;
@@ -827,6 +914,7 @@ class Projectile {
                         e.takeDamage(this.damage, this.source, this.color);
                         if (this.type === 'bullet') shockwaves.push(new Shockwave(this.x, this.y, this.z, this.color));
                         else createParticles(this.x, this.y, 0, 5, this.color);
+                    if (this.graphics) this.graphics.destroy();
                         return true; // destroy projectile
                     }
                 }
@@ -836,38 +924,46 @@ class Projectile {
                 player.takeDamage(this.damage, this.source);
                 if (this.type === 'bullet') shockwaves.push(new Shockwave(this.x, this.y, this.z, this.color));
                 else createParticles(this.x, this.y, 0, 5, this.color);
+            if (this.graphics) this.graphics.destroy();
                 return true;
             }
         }
-        return this.life <= 0;
+    if (this.life <= 0) {
+        if (this.graphics) this.graphics.destroy();
+        return true;
     }
-    draw(ctx) {
+    return false;
+    }
+    draw() {
+        if (!this.graphics) return;
+        this.graphics.clear();
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
+        if(!p) {
+            this.graphics.visible = false;
+            return;
+        }
         
+        this.graphics.visible = true;
+        this.graphics.zIndex = this.z;
+        let c = parseColor(this.color);
+
         if (this.type === 'bullet' && (this.vx !== 0 || this.vy !== 0)) {
             let s = getScale(this.z);
             let angle = Math.atan2(this.vy, this.vx);
             let length = 15 * s;
             
-            ctx.strokeStyle = this.color;
-            ctx.lineWidth = 6 * s;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
-            ctx.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
-            ctx.stroke();
+            this.graphics.lineStyle({width: 6 * s, color: c, alpha: 1.0, cap: PIXI.LINE_CAP.ROUND});
+            this.graphics.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
+            this.graphics.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
             
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2 * s;
-            ctx.stroke();
+            this.graphics.lineStyle({width: 2 * s, color: 0xffffff, alpha: 1.0, cap: PIXI.LINE_CAP.ROUND});
+            this.graphics.moveTo(p.x - Math.cos(angle) * length, p.y - Math.sin(angle) * length);
+            this.graphics.lineTo(p.x + Math.cos(angle) * length, p.y + Math.sin(angle) * length);
         } else {
-            ctx.fillStyle = this.color;
-            ctx.beginPath(); ctx.arc(p.x, p.y, 3 * getScale(this.z), 0, Math.PI*2); ctx.fill();
+            this.graphics.beginFill(c);
+            this.graphics.drawCircle(p.x, p.y, 3 * getScale(this.z));
+            this.graphics.endFill();
         }
-        ctx.shadowBlur = 0;
     }
 }
 
@@ -893,10 +989,16 @@ class WhipBeam {
 
         this.pulseCount = 0;
         this.maxPulsesNoTarget = 2; // Pulsing empty space times out weapon
+        
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
     }
 
     update(dt, targetX, targetY) {
-        if (this.dead) return true;
+        if (this.dead) {
+            if(this.graphics) this.graphics.destroy();
+            return true;
+        }
 
         this.snappedEnemies.clear();
         this.mainTarget = null;
@@ -973,6 +1075,7 @@ class WhipBeam {
                 this.pulseCount++;
                 if (this.pulseCount >= this.maxPulsesNoTarget) {
                     this.dead = true;
+                    if(this.graphics) this.graphics.destroy();
                     return true;
                 }
             } else {
@@ -992,40 +1095,44 @@ class WhipBeam {
     }
 
     draw(ctx) {
-        if (this.dead) return;
-        ctx.strokeStyle = this.color;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = this.color;
+        if (this.dead || !this.graphics) return;
+        this.graphics.clear();
         
-        // Visual pulsing width
-        let widthMult = 1 + 0.5 * Math.sin(Date.now() / 50);
-        ctx.lineWidth = 4 * widthMult * getScale(this.z);
-        
-        ctx.beginPath();
         let p0 = project(this.nodes[0].x, this.nodes[0].y, this.z);
-        if (!p0) {
-            ctx.shadowBlur = 0;
-            return; 
-        }
-        ctx.moveTo(p0.x, p0.y);
-
-        // Quad curve through midpoints
+        if (!p0) return;
+        
+        let widthMult = 1 + 0.5 * Math.sin(Date.now() / 50);
+        let scale = getScale(this.z);
+        let w = 4 * widthMult * scale;
+        let c = PIXI.utils.string2hex(this.color);
+        
+        this.graphics.lineStyle(w + 4*scale, c, 0.3); // Glow effect
+        this.graphics.moveTo(p0.x, p0.y);
         for (let i = 1; i < this.numNodes - 1; i++) {
             let pCurr = project(this.nodes[i].x, this.nodes[i].y, this.z);
             let pNext = project(this.nodes[i+1].x, this.nodes[i+1].y, this.z);
             if (pCurr && pNext) {
                 let mx = (pCurr.x + pNext.x) / 2;
                 let my = (pCurr.y + pNext.y) / 2;
-                ctx.quadraticCurveTo(pCurr.x, pCurr.y, mx, my);
+                this.graphics.quadraticCurveTo(pCurr.x, pCurr.y, mx, my);
             }
         }
         let pLast = project(this.nodes[this.numNodes-1].x, this.nodes[this.numNodes-1].y, this.z);
-        if (pLast) {
-            ctx.lineTo(pLast.x, pLast.y);
-        }
+        if (pLast) this.graphics.lineTo(pLast.x, pLast.y);
 
-        ctx.stroke();
-        ctx.shadowBlur = 0;
+        this.graphics.lineStyle(w, c, 1.0); // Core beam
+        this.graphics.moveTo(p0.x, p0.y);
+        for (let i = 1; i < this.numNodes - 1; i++) {
+            let pCurr = project(this.nodes[i].x, this.nodes[i].y, this.z);
+            let pNext = project(this.nodes[i+1].x, this.nodes[i+1].y, this.z);
+            if (pCurr && pNext) {
+                let mx = (pCurr.x + pNext.x) / 2;
+                let my = (pCurr.y + pNext.y) / 2;
+                this.graphics.quadraticCurveTo(pCurr.x, pCurr.y, mx, my);
+            }
+        }
+        if (pLast) this.graphics.lineTo(pLast.x, pLast.y);
+        this.graphics.zIndex = this.z;
     }
 }
 
@@ -1041,10 +1148,17 @@ class SpecialFuelDrop {
         let spd = MathUtils.rand(20, 50);
         this.vx = Math.cos(ang) * spd;
         this.vy = Math.sin(ang) * spd;
+        
+        this.sprite = new PIXI.Sprite(GAME.textures.specialFuel);
+        this.sprite.anchor.set(0.5);
+        GAME.layers.game.addChild(this.sprite);
     }
     update(dt) {
         this.life -= dt;
-        if (this.life <= 0) return true;
+        if (this.life <= 0) {
+            if (this.sprite) this.sprite.destroy();
+            return true;
+        }
         
         this.vx *= 0.95;
         this.vy *= 0.95;
@@ -1062,25 +1176,23 @@ class SpecialFuelDrop {
             createFloatingText(`+${Math.floor(this.fuelAmount)} Fuel`, this.x, this.y, '#ffff00', 1.5, true);
             playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/impactMetal_004.ogg');
             updateUI();
+            if (this.sprite) this.sprite.destroy();
             return true;
         }
         return false;
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let s = getScale(this.z);
-        
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = '#ffff00';
-        ctx.fillStyle = '#ffff00';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, this.radius * s, 0, Math.PI*2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        
-        ctx.fillStyle = '#000';
-        ctx.fillRect(p.x - 2*s, p.y - 4*s, 4*s, 8*s);
+        if(!p) {
+            if (this.sprite) this.sprite.visible = false;
+            return;
+        }
+        if (this.sprite) {
+            this.sprite.visible = true;
+            this.sprite.position.set(p.x, p.y);
+            this.sprite.scale.set(getScale(this.z));
+            this.sprite.zIndex = this.z;
+        }
     }
 }
 
@@ -1102,6 +1214,9 @@ class HomingMissile {
         this.damageScale = 0.2;
         this.explosionDamageMult = 1.0;
         this.damage = this.baseDamage * (1 + (player.level - 1) * this.damageScale);
+        
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
     }
     update(dt) {
         if (this.dead) return true;
@@ -1134,6 +1249,7 @@ class HomingMissile {
     }
     detonate() {
         this.dead = true;
+        if (this.graphics) this.graphics.destroy();
         createParticles(this.x, this.y, 0, 50, '#ff4400');
         shockwaves.push(new Shockwave(this.x, this.y, 0, '#ff4400', 75));
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
@@ -1143,51 +1259,60 @@ class HomingMissile {
             player.takeDamage(hpDmg + flatDmg, this.source);
         }
     }
-    draw(ctx) {
+    draw() {
+        if (!this.graphics) return;
+        this.graphics.clear();
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
+        if(!p) {
+            this.graphics.visible = false;
+            return;
+        }
         let s = getScale(this.z);
         
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.scale(s, s);
-        ctx.rotate(this.angle);
+        this.graphics.visible = true;
+        this.graphics.position.set(p.x, p.y);
+        this.graphics.scale.set(s);
+        this.graphics.rotation = this.angle;
+        this.graphics.zIndex = this.z;
         
-        ctx.fillStyle = '#ffaa00';
-        ctx.beginPath();
-        ctx.moveTo(10, 0); 
-        ctx.lineTo(-10, 7.5);
-        ctx.lineTo(-10, -7.5);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#222';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        this.graphics.beginFill(0xffaa00);
+        this.graphics.moveTo(10, 0); 
+        this.graphics.lineTo(-10, 7.5);
+        this.graphics.lineTo(-10, -7.5);
+        this.graphics.closePath();
+        this.graphics.endFill();
+    
+        this.graphics.lineStyle(1, 0x222222);
+        this.graphics.moveTo(10, 0); 
+        this.graphics.lineTo(-10, 7.5);
+        this.graphics.lineTo(-10, -7.5);
+        this.graphics.lineTo(10, 0);
         
         if (this.fuel > 0) {
-            ctx.fillStyle = '#ff0000';
-            ctx.beginPath();
-            ctx.moveTo(-10, 5);
-            ctx.lineTo(-10 - Math.random() * 15, 0);
-            ctx.lineTo(-10, -5);
-            ctx.fill();
+            this.graphics.lineStyle(0);
+            this.graphics.beginFill(0xff0000);
+            this.graphics.moveTo(-10, 5);
+            this.graphics.lineTo(-10 - Math.random() * 15, 0);
+            this.graphics.lineTo(-10, -5);
+            this.graphics.endFill();
         }
         
-        ctx.restore();
+        this.graphics.rotation = 0;
         
-        let barW = 30 * s;
-        let barH = 4 * s;
-        let bY = p.y + 20 * s;
+        let barW = 30;
+        let barH = 4;
+        let bY = 20;
         
-        ctx.fillStyle = 'red';
-        ctx.fillRect(p.x - barW/2, bY, barW, barH);
-        ctx.fillStyle = 'green';
-        ctx.fillRect(p.x - barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        this.graphics.beginFill(0xff0000);
+        this.graphics.drawRect(-barW/2, bY, barW, barH);
+        this.graphics.beginFill(0x00ff00);
+        this.graphics.drawRect(-barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
         
-        ctx.fillStyle = '#333';
-        ctx.fillRect(p.x - barW/2, bY + barH + 2, barW, barH);
-        ctx.fillStyle = '#ffff00';
-        ctx.fillRect(p.x - barW/2, bY + barH + 2, barW * Math.max(0, this.fuel / 100), barH);
+        this.graphics.beginFill(0x333333);
+        this.graphics.drawRect(-barW/2, bY + barH + 2, barW, barH);
+        this.graphics.beginFill(0xffff00);
+        this.graphics.drawRect(-barW/2, bY + barH + 2, barW * Math.max(0, this.fuel / 100), barH);
+        this.graphics.endFill();
     }
     takeDamage(amount, source, color = '#fff') {
         if (this.dead) return false;
@@ -1197,6 +1322,7 @@ class HomingMissile {
         if (amount >= 1) createFloatingText(`-${Math.floor(amount)}${critInfo.isCrit ? '!' : ''}`, this.x, this.y, color, 1.0, false, true, critInfo.isCrit);
         if(this.hp <= 0) {
             this.dead = true;
+            if (this.graphics) this.graphics.destroy();
             createParticles(this.x, this.y, 0, 30, '#888');
             entities.push(new SpecialFuelDrop(this.x, this.y, this.fuel));
             return true;
@@ -1228,6 +1354,25 @@ class Boss extends Enemy {
             { name: 'barrage', cd: 3, maxCd: 10.0, active: false, shotsFired: 0, shotTimer: 0, currentAngle: 0 },
             { name: 'missile', cd: 6, maxCd: 9.0 }
         ];
+        
+        this.pixiObj.removeChild(this.body);
+        if(this.comboOverlay) this.comboOverlay.destroy();
+        this.body.destroy();
+        
+        this.body = new PIXI.Graphics();
+        this.body.beginFill(0x000000, 0.8);
+        this.body.lineStyle(2, 0xffffff);
+        this.body.drawCircle(0, 0, this.radius);
+        this.body.moveTo(0,0); this.body.lineTo(15, 0);
+        this.body.endFill();
+        
+        this.baseTint = 0xff4400;
+        this.body.tint = this.baseTint;
+        
+        this.hpBar = new PIXI.Graphics();
+        this.bossText = new PIXI.Text('VOID BOSS', {fontFamily: 'Orbitron', fontSize: 10, fill: 0xffffff});
+        this.bossText.anchor.set(0.5, 1);
+        this.pixiObj.addChild(this.body, this.hpBar, this.bossText);
     }
 
     update(dt) {
@@ -1304,25 +1449,22 @@ class Boss extends Enemy {
 
     draw(ctx) {
         super.draw(ctx); // basic shape
-        let p = project(this.x, this.y, this.z);
-        if(!p) return;
+        if(!this.pixiObj || !this.pixiObj.visible) return;
         
-        let barW = 80 * getScale(this.z);
-        let barH = 6 * getScale(this.z);
-        let bY = p.y - 50 * getScale(this.z);
+        let barW = 80;
+        let barH = 6;
+        let bY = -50;
         
-        ctx.fillStyle = '#000';
-        ctx.fillRect(p.x - barW/2, bY, barW, barH);
-        ctx.fillStyle = '#ff0000';
-        ctx.fillRect(p.x - barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(p.x - barW/2, bY, barW, barH);
+        this.hpBar.clear();
+        this.hpBar.beginFill(0x000000);
+        this.hpBar.drawRect(-barW/2, bY, barW, barH);
+        this.hpBar.beginFill(0xff0000);
+        this.hpBar.drawRect(-barW/2, bY, barW * Math.max(0, this.hp / this.maxHp), barH);
+        this.hpBar.lineStyle(1, 0xffffff);
+        this.hpBar.drawRect(-barW/2, bY, barW, barH);
+        this.hpBar.endFill();
         
-        ctx.fillStyle = '#fff';
-        ctx.font = `${10 * getScale(this.z)}px Orbitron`;
-        ctx.textAlign = 'center';
-        ctx.fillText("VOID BOSS", p.x, bY - 4 * getScale(this.z));
+        this.bossText.position.set(0, bY - 4);
     }
 
     takeDamage(amount, source, color = '#fff') {
@@ -1391,6 +1533,7 @@ class Singularity {
             }
             
             if (this.timer <= 0) {
+                if (this.graphics) this.graphics.destroy();
                 this.explode();
                 return true;
             }
@@ -1505,6 +1648,9 @@ class WarpTrail {
         this.angle = Math.atan2(this.dy, this.dx);
         this.tickTimer = 0;
         this.tickDamageMult = 0.8;
+        
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
     }
     update(dt) {
         this.life -= dt;
@@ -1548,10 +1694,25 @@ class WarpTrail {
                 }
             }
         }
-        return this.life <= 0;
+        if (this.life <= 0) {
+            if(this.graphics) this.graphics.destroy();
+            return true;
+        }
+        return false;
     }
     draw(ctx) {
-        // The trail visual is driven by spawned particles, so the base entity doesn't need to draw
+        if (!this.graphics) return;
+        this.graphics.clear();
+        let p1 = project(this.x1, this.y1, this.z);
+        let p2 = project(this.x2, this.y2, this.z);
+        if (!p1 || !p2) return;
+        
+        let progress = this.life / this.maxLife;
+        let c = PIXI.utils.string2hex(this.color);
+        this.graphics.lineStyle(this.width * getScale(this.z) * progress, c, progress * 0.3);
+        this.graphics.moveTo(p1.x, p1.y);
+        this.graphics.lineTo(p2.x, p2.y);
+        this.graphics.zIndex = this.z;
     }
 }
 
@@ -1569,6 +1730,10 @@ class Drop {
         let spd = MathUtils.rand(10, 40);
         this.vx = Math.cos(ang) * spd;
         this.vy = Math.sin(ang) * spd;
+        
+        this.sprite = new PIXI.Sprite(PIXI.Texture.from(this.iconInfo.img));
+        this.sprite.anchor.set(0.5);
+        GAME.layers.game.addChild(this.sprite);
     }
     update(dt) {
         this.hoverOffset += dt * 3;
@@ -1599,6 +1764,7 @@ class Drop {
                     text += '\n' + this.item.statLines.join('\n');
                 }
                 createFloatingText(text, this.x, this.y, this.color, 3.0, true);
+                if (this.sprite) this.sprite.destroy();
                 return true;
             }
         }
@@ -1606,18 +1772,17 @@ class Drop {
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let s = getScale(this.z);
-        let yOffset = Math.sin(this.hoverOffset) * 5;
-        
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
-        
-        let size = 12 * s;
-        if(this.iconInfo.img.complete) {
-            ctx.drawImage(this.iconInfo.img, p.x - size, p.y - size + yOffset*s, size*2, size*2);
+        if(!p) {
+            if (this.sprite) this.sprite.visible = false;
+            return;
         }
-        ctx.shadowBlur = 0;
+        if (this.sprite) {
+            this.sprite.visible = true;
+            let s = getScale(this.z);
+            this.sprite.position.set(p.x, p.y + Math.sin(this.hoverOffset) * 5 * s);
+            this.sprite.scale.set(s * 0.5); // SVG rendered at 48x48, scale back to 24
+            this.sprite.zIndex = this.z;
+        }
     }
 }
 
@@ -1632,6 +1797,10 @@ class XpOrb {
         this.vx = Math.cos(ang) * spd;
         this.vy = Math.sin(ang) * spd;
         this.life = 0;
+        
+        this.sprite = new PIXI.Sprite(isBonus ? GAME.textures.xpOrbBonus : GAME.textures.xpOrb);
+        this.sprite.anchor.set(0.5);
+        GAME.layers.game.addChild(this.sprite);
     }
     update(dt) {
         this.life += dt;
@@ -1654,26 +1823,22 @@ class XpOrb {
 
         if (dist < player.radius + this.radius + 15) {
             player.gainXp(this.xpValue);
+            if (this.sprite) this.sprite.destroy();
             return true; // remove orb
         }
         return false;
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let s = getScale(this.z);
-        let pulse = 1 + 0.4 * Math.sin(this.life * 8);
-        let color = this.isBonus ? '#aaffcc' : '#00ff66';
-        ctx.fillStyle = color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-        
-        if (this.isBonus) {
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.stroke();
+        if(!p) {
+            if (this.sprite) this.sprite.visible = false;
+            return;
+        }
+        if (this.sprite) {
+            this.sprite.visible = true;
+            this.sprite.position.set(p.x, p.y);
+            this.sprite.scale.set(getScale(this.z) * (1 + 0.4 * Math.sin(this.life * 8)));
+            this.sprite.zIndex = this.z;
         }
     }
 }
@@ -1687,7 +1852,10 @@ class HpOrb {
         this.vx = Math.cos(ang) * spd;
         this.vy = Math.sin(ang) * spd;
         this.life = 0;
-        this.color = '#ff3366';
+        
+        this.sprite = new PIXI.Sprite(GAME.textures.hpOrb);
+        this.sprite.anchor.set(0.5);
+        GAME.layers.game.addChild(this.sprite);
     }
     update(dt) {
         this.life += dt;
@@ -1712,25 +1880,23 @@ class HpOrb {
             player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healAmount);
             createFloatingText("+10% HP", this.x, this.y, '#00ff66', 1.5, true);
             updateUI();
+            if (this.sprite) this.sprite.destroy();
             return true; // remove orb
         }
         return false;
     }
     draw(ctx) {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
-        let s = getScale(this.z);
-        let pulse = 1 + 0.3 * Math.sin(this.life * 5);
-        ctx.fillStyle = this.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, this.radius * s * pulse, 0, Math.PI*2); ctx.fill();
-        
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(p.x - 1*s, p.y - 3*s, 2*s, 6*s);
-        ctx.fillRect(p.x - 3*s, p.y - 1*s, 6*s, 2*s);
-        
-        ctx.shadowBlur = 0;
+        if(!p) {
+            if (this.sprite) this.sprite.visible = false;
+            return;
+        }
+        if (this.sprite) {
+            this.sprite.visible = true;
+            this.sprite.position.set(p.x, p.y);
+            this.sprite.scale.set(getScale(this.z) * (1 + 0.3 * Math.sin(this.life * 5)));
+            this.sprite.zIndex = this.z;
+        }
     }
 }
 
@@ -1760,35 +1926,40 @@ class Particle {
     update(dt) {
         this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
         this.life -= dt;
-        return this.life <= 0;
+        if (this.life <= 0) {
+            if (this.sprite) this.sprite.destroy();
+            if (this.graphics) this.graphics.destroy();
+            return true;
+        }
+        return false;
     }
-    draw(ctx) {
+    draw() {
         let p = project(this.x, this.y, this.z);
-        if(!p) return;
+        if(!p) {
+            if (this.sprite) this.sprite.visible = false;
+            if (this.graphics) this.graphics.visible = false;
+            return;
+        }
         let s = getScale(this.z);
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+        let alpha = Math.max(0, this.life / this.maxLife);
         
         if (this.type === 'lightning') {
-            ctx.strokeStyle = this.color;
-            ctx.lineWidth = 2 * s;
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
+            this.graphics.visible = true;
+            this.graphics.clear();
+            this.graphics.lineStyle({width: 2 * s, color: parseColor(this.color), alpha: alpha});
+            this.graphics.moveTo(p.x, p.y);
             for(let i=1; i<this.points.length; i++) {
-                ctx.lineTo(p.x + this.points[i].x * s, p.y + this.points[i].y * s);
+                this.graphics.lineTo(p.x + this.points[i].x * s, p.y + this.points[i].y * s);
             }
-            ctx.stroke();
+            this.graphics.zIndex = this.z;
         } else {
-            ctx.save();
-            ctx.translate(p.x, p.y);
-            ctx.rotate(Math.atan2(this.vy, this.vx));
-            ctx.beginPath(); 
-            ctx.ellipse(0, 0, 4 * s, 1.5 * s, 0, 0, Math.PI * 2); 
-            ctx.fill();
-            ctx.restore();
+            this.sprite.visible = true;
+            this.sprite.position.set(p.x, p.y);
+            this.sprite.rotation = Math.atan2(this.vy, this.vx);
+            this.sprite.scale.set(s);
+            this.sprite.alpha = alpha;
+            this.sprite.zIndex = this.z;
         }
-        
-        ctx.globalAlpha = 1.0;
     }
 }
 
@@ -1819,6 +1990,34 @@ class FloatingText {
         } else {
             this.vx = 0; this.vy = -20;
         }
+        
+        this.container = new PIXI.Container();
+        let lines = text.split('\n');
+        let startY = 0;
+        let c = parseColor(color);
+        
+        for(let j=0; j<lines.length; j++) {
+            let size = (this.isLoot && j > 0) ? 14 : (this.isLoot && j === 0 ? 18 : (this.isCrit ? 36 : (this.isDamage ? 26 : 22)));
+            let style = new PIXI.TextStyle({
+                fontFamily: 'Orbitron',
+                fontSize: size,
+                fontWeight: 'bold',
+                fontStyle: this.isCrit ? 'italic' : 'normal',
+                fill: this.isCrit ? '#ffffff' : c,
+                stroke: this.isCrit ? c : undefined,
+                strokeThickness: this.isCrit ? 4 : 0,
+                dropShadow: !this.isCrit,
+                dropShadowColor: '#000000',
+                dropShadowBlur: 4,
+                dropShadowDistance: 2
+            });
+            let t = new PIXI.Text(lines[j], style);
+            t.anchor.set(0.5, 0);
+            t.y = startY;
+            startY += size + 4;
+            this.container.addChild(t);
+        }
+        GAME.layers.ui.addChild(this.container);
     }
     update(dt) {
         this.life -= dt;
@@ -1883,21 +2082,32 @@ class Shockwave {
         this.life = 0.3;
         this.maxLife = 0.3;
         this.maxRadius = maxRadius;
+        
+        this.graphics = new PIXI.Graphics();
+        GAME.layers.game.addChild(this.graphics);
     }
     update(dt) {
         this.life -= dt;
-        return this.life <= 0;
+        if (this.life <= 0) {
+            if (this.graphics) this.graphics.destroy();
+            return true;
+        }
+        return false;
     }
     draw(ctx) {
+        if (!this.graphics) return;
+        this.graphics.clear();
         let p = project(this.x, this.y, this.z);
         if(!p) return;
+        
         let s = getScale(this.z);
         let progress = 1 - (this.life / this.maxLife);
-        ctx.strokeStyle = this.color;
-        ctx.globalAlpha = 1 - progress;
-        ctx.lineWidth = 3 * s * (this.life / this.maxLife);
-        ctx.beginPath(); ctx.arc(p.x, p.y, progress * this.maxRadius * s, 0, Math.PI*2); ctx.stroke();
-        ctx.globalAlpha = 1.0;
+        let alpha = 1 - progress;
+        let c = PIXI.utils.string2hex(this.color);
+        
+        this.graphics.lineStyle(3 * s * (this.life / this.maxLife), c, alpha);
+        this.graphics.drawCircle(p.x, p.y, progress * this.maxRadius * s);
+        this.graphics.zIndex = this.z;
     }
 }
 

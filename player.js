@@ -221,6 +221,7 @@ const player = {
             createFloatingText("IMMUNE", this.x, this.y, '#fff', 1.0, false, true);
             return;
         }
+        this.timers.flash = 0.1;
         let actualDamage = amount * (1 - this.stats.damageReduction);
         actualDamage = Math.max(1, actualDamage);
         if (this.stats.shields > 0) {

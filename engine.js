@@ -1,3 +1,6 @@
+import * as PIXI from './node_modules/pixi.js/dist/pixi.mjs';
+window.PIXI = PIXI;
+
 /** ==========================================
  * PROJECTION & RENDERING
  * ========================================== */
@@ -15,9 +18,13 @@ function project(x, y, z) {
     return { x: px, y: py };
 }
 
-function drawGrid(ctx) {
-    ctx.strokeStyle = 'rgba(26, 43, 76, 0.3)';
-    ctx.lineWidth = 1;
+window.getScale = getScale;
+window.project = project;
+
+function drawGrid() {
+    let g = GAME.graphics.grid;
+    g.clear();
+    g.lineStyle(1, 0x1a2b4c, 0.3);
     let gridSize = 200;
     
     // Determine visible world bounds
@@ -35,24 +42,104 @@ function drawGrid(ctx) {
     let hw = cw / 2;
     let hh = ch / 2;
 
-    ctx.beginPath();
     for(let x = startX; x < right; x += gridSize) {
         let px = (x - cx) * scale + hw;
-        ctx.moveTo(px, (top - cy) * scale + hh);
-        ctx.lineTo(px, (bottom - cy) * scale + hh);
+        g.moveTo(px, (top - cy) * scale + hh);
+        g.lineTo(px, (bottom - cy) * scale + hh);
     }
     for(let y = startY; y < bottom; y += gridSize) {
         let py = (y - cy) * scale + hh;
-        ctx.moveTo((left - cx) * scale + hw, py);
-        ctx.lineTo((right - cx) * scale + hw, py);
+        g.moveTo((left - cx) * scale + hw, py);
+        g.lineTo((right - cx) * scale + hw, py);
     }
-    ctx.stroke();
 }
 
 /** ==========================================
  * MAIN GAME LOOP & LOGIC
  * ========================================== */
-const RENDER_LIST = [];
+function initPixi() {
+    GAME.pixiApp = new PIXI.Application({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        backgroundColor: 0x050508, 
+        resizeTo: window
+    });
+    document.getElementById('pixi-container').appendChild(GAME.pixiApp.view);
+
+    GAME.layers.background = new PIXI.Container();
+    GAME.layers.game = new PIXI.Container();
+    GAME.layers.ui = new PIXI.Container();
+    
+    // Automate z-sorting natively within PixiJS for future phases!
+    GAME.layers.game.sortableChildren = true;
+
+    GAME.pixiApp.stage.addChild(GAME.layers.background);
+    GAME.pixiApp.stage.addChild(GAME.layers.game);
+    GAME.pixiApp.stage.addChild(GAME.layers.ui);
+
+    // Generate base Star Texture
+    const starGraphics = new PIXI.Graphics();
+    starGraphics.beginFill(0xFFFFFF);
+    starGraphics.drawCircle(0, 0, 10);
+    starGraphics.endFill();
+    GAME.textures.star = GAME.pixiApp.renderer.generateTexture(starGraphics);
+
+    // Generate soft Cloud Texture via 2D Canvas Fallback
+    const cloudCanvas = document.createElement('canvas');
+    cloudCanvas.width = 256; cloudCanvas.height = 256;
+    const cCtx = cloudCanvas.getContext('2d');
+    const grad = cCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    cCtx.fillStyle = grad; cCtx.fillRect(0,0,256,256);
+    GAME.textures.cloud = PIXI.Texture.from(cloudCanvas);
+
+    // Generate XpOrb
+    const xpG = new PIXI.Graphics();
+    xpG.beginFill(0x00ff66); xpG.drawCircle(0, 0, 4); xpG.endFill();
+    GAME.textures.xpOrb = GAME.pixiApp.renderer.generateTexture(xpG);
+
+    const xpBG = new PIXI.Graphics();
+    xpBG.lineStyle(1, 0xffffff); xpBG.beginFill(0xaaffcc); xpBG.drawCircle(0, 0, 5); xpBG.endFill();
+    GAME.textures.xpOrbBonus = GAME.pixiApp.renderer.generateTexture(xpBG);
+
+    const hpG = new PIXI.Graphics();
+    hpG.beginFill(0xff3366); hpG.drawCircle(0, 0, 6); hpG.endFill();
+    hpG.beginFill(0xffffff); hpG.drawRect(-1, -3, 2, 6); hpG.drawRect(-3, -1, 6, 2); hpG.endFill();
+    GAME.textures.hpOrb = GAME.pixiApp.renderer.generateTexture(hpG);
+
+    const specialFuelG = new PIXI.Graphics();
+    specialFuelG.beginFill(0xffff00); specialFuelG.drawCircle(0, 0, 10); specialFuelG.endFill();
+    specialFuelG.beginFill(0x000000); specialFuelG.drawRect(-2, -4, 4, 8); specialFuelG.endFill();
+    GAME.textures.specialFuel = GAME.pixiApp.renderer.generateTexture(specialFuelG);
+
+    // Setup Shared Dynamic & UI Graphics
+    GAME.graphics = { mycelial: new PIXI.Graphics(), grid: new PIXI.Graphics() };
+    GAME.layers.background.addChild(GAME.graphics.grid);
+    GAME.graphics.mycelial.zIndex = 0;
+
+    GAME.graphics.damageGlow = new PIXI.Graphics();
+    GAME.layers.ui.addChild(GAME.graphics.damageGlow);
+    
+    let icon = getIcon('BossSkull', '#ff0000');
+    GAME.graphics.bossIndicator = new PIXI.Sprite(PIXI.Texture.from(icon.img));
+    GAME.graphics.bossIndicator.anchor.set(0.5);
+    GAME.layers.ui.addChild(GAME.graphics.bossIndicator);
+    GAME.layers.game.addChild(GAME.graphics.mycelial);
+
+    // Setup Player Ship Pixi Object
+    player.pixiObj = new PIXI.Container();
+    player.rangeOverlays = new PIXI.Graphics();
+    player.body = new PIXI.Graphics();
+    player.shieldGraphics = new PIXI.Graphics();
+    
+    player.body.beginFill(0x111111);
+    player.body.lineStyle(2, 0xffffff); // White line to tint perfectly
+    player.body.moveTo(20, 0); player.body.lineTo(-15, 15); player.body.lineTo(-10, 0); player.body.lineTo(-15, -15); player.body.closePath();
+    player.body.endFill();
+    
+    player.pixiObj.addChild(player.rangeOverlays, player.body, player.shieldGraphics);
+    GAME.layers.game.addChild(player.pixiObj);
+}
 
 function updateMycelialNetwork() {
     mycelialLoops = [];
@@ -309,6 +396,7 @@ function update(dt) {
         }
     } else if (player.activeWhipBeam) {
         player.activeWhipBeam.dead = true;
+        if(player.activeWhipBeam.graphics) player.activeWhipBeam.graphics.destroy();
         player.activeWhipBeam = null;
     }
     
@@ -322,6 +410,7 @@ function update(dt) {
     if(player.damageIntensity > 0) {
         player.damageIntensity = Math.max(0, player.damageIntensity - dt);
     }
+    if(player.timers.flash > 0) player.timers.flash -= dt;
 
     // --- Resource Regen & Drain ---
     if(speed > 10) {
@@ -491,14 +580,18 @@ updateUI();
 }
 
 function draw() {
-    ctx.fillStyle = varColor('--bg');
-    ctx.fillRect(0, 0, cw, ch);
     
     // Draw Stars
     let time = Date.now() / 1000;
     for(let s of GAME.stars) {
+        if (!s.sprite) {
+            s.sprite = new PIXI.Sprite(GAME.textures.star);
+            s.sprite.anchor.set(0.5);
+            GAME.layers.background.addChild(s.sprite);
+        }
         let p = project(s.x, s.y, s.z);
         if(p) {
+            s.sprite.visible = true;
             let alpha = 0.3 + 0.4 * Math.sin(time * s.pulseSpeed + s.offset);
             
             let stretch = 1;
@@ -514,56 +607,58 @@ function draw() {
                 }
             }
 
-            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
             let scale = getScale(s.z);
-            if (stretch > 1) {
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.rotate(drawAngle);
-                ctx.scale(stretch, 1 / stretch);
-                ctx.beginPath(); ctx.arc(0, 0, s.size * scale, 0, Math.PI*2); ctx.fill();
-                ctx.restore();
-            } else {
-                ctx.beginPath(); ctx.arc(p.x, p.y, s.size * scale, 0, Math.PI*2); ctx.fill();
-            }
+            s.sprite.x = p.x;
+            s.sprite.y = p.y;
+            s.sprite.rotation = drawAngle;
+            s.sprite.scale.set((s.size / 10) * scale * stretch, (s.size / 10) * scale * (1 / stretch));
+            s.sprite.alpha = alpha;
+        } else {
+            s.sprite.visible = false;
         }
     }
 
     // Draw Clouds
     for(let c of GAME.clouds) {
+        if(!c.sprite) {
+            c.sprite = new PIXI.Sprite(GAME.textures.cloud);
+            c.sprite.anchor.set(0.5);
+            c.sprite.tint = (c.r << 16) + (c.g << 8) + c.b; 
+            GAME.layers.background.addChild(c.sprite);
+        }
         let p = project(c.x, c.y, c.z);
         if(p) {
+            c.sprite.visible = true;
             let scale = getScale(c.z);
             let rad = c.radius * scale;
-            let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
-            grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${c.alpha})`);
-            grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
-            ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI*2); ctx.fill();
+            c.sprite.x = p.x;
+            c.sprite.y = p.y;
+            c.sprite.scale.set(rad / 128); // Original rad / 128px canvas radius
+            c.sprite.alpha = c.alpha;
+        } else {
+            c.sprite.visible = false;
         }
     }
 
-    drawGrid(ctx);
+    drawGrid();
 
     // Draw Mycelial Clouds
-    ctx.fillStyle = 'rgba(153, 255, 51, 0.1)';
-    ctx.strokeStyle = 'rgba(153, 255, 51, 0.2)';
-    ctx.lineWidth = 1;
+    GAME.graphics.mycelial.clear();
     for (const loop of mycelialLoops) {
         if (loop.length < 3) continue;
         
         let p0 = project(loop[0].x, loop[0].y, 0);
         if (!p0) continue;
 
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
+        GAME.graphics.mycelial.beginFill(0x99ff33, 0.1);
+        GAME.graphics.mycelial.lineStyle(1, 0x99ff33, 0.2);
+        GAME.graphics.mycelial.moveTo(p0.x, p0.y);
         for (let i = 1; i < loop.length; i++) {
             let p = project(loop[i].x, loop[i].y, 0);
-            if (p) ctx.lineTo(p.x, p.y);
+            if (p) GAME.graphics.mycelial.lineTo(p.x, p.y);
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        GAME.graphics.mycelial.closePath();
+        GAME.graphics.mycelial.endFill();
 
         // Gaseous particles
         if (Math.random() < 0.1) {
@@ -572,104 +667,69 @@ function draw() {
         }
     }
 
-    // Draw order: Z-sorting
-    RENDER_LIST.length = 0;
-    for(let i=0; i<entities.length; i++) RENDER_LIST.push(entities[i]);
-    for(let i=0; i<drops.length; i++) RENDER_LIST.push(drops[i]);
-    for(let i=0; i<xpOrbs.length; i++) RENDER_LIST.push(xpOrbs[i]);
-    for(let i=0; i<hpOrbs.length; i++) RENDER_LIST.push(hpOrbs[i]);
-    for(let i=0; i<particles.length; i++) RENDER_LIST.push(particles[i]);
-    for(let i=0; i<projectiles.length; i++) RENDER_LIST.push(projectiles[i]);
-    for(let i=0; i<shockwaves.length; i++) RENDER_LIST.push(shockwaves[i]);
-    for(let i=0; i<warpTrails.length; i++) RENDER_LIST.push(warpTrails[i]);
-    if (player.activeWhipBeam) RENDER_LIST.push(player.activeWhipBeam);
-    RENDER_LIST.push({ isPlayerShip: true, x: player.x, y: player.y, z: 0 });
-    
-    RENDER_LIST.sort((a, b) => b.z - a.z); // draw deep space first
+    // Loop through everything and call .draw() to update their Pixi properties natively
+    for(let i=0; i<entities.length; i++) entities[i].draw();
+    for(let i=0; i<drops.length; i++) drops[i].draw();
+    for(let i=0; i<xpOrbs.length; i++) xpOrbs[i].draw();
+    for(let i=0; i<hpOrbs.length; i++) hpOrbs[i].draw();
+    for(let i=0; i<particles.length; i++) particles[i].draw();
+    for(let i=0; i<projectiles.length; i++) projectiles[i].draw();
+    for(let i=0; i<shockwaves.length; i++) shockwaves[i].draw();
+    for(let i=0; i<warpTrails.length; i++) warpTrails[i].draw();
+    if (player.activeWhipBeam) player.activeWhipBeam.draw();
 
-    for(let i=0; i<RENDER_LIST.length; i++) {
-        let obj = RENDER_LIST[i];
-        if(obj.isPlayerShip) {
-            let p = project(player.x, player.y, 0);
-            if(p) {
-                let s = getScale(0);
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.scale(s, s);
-                
-                // Ability Range Faint Overlays (Under ship, stationary relative to ship orientation)
-                ctx.lineWidth = 1;
+    // Player PIXI Sync
+    let p = project(player.x, player.y, 0);
+    if(p) {
+        player.pixiObj.visible = true;
+        let s = getScale(0);
+        player.pixiObj.position.set(p.x, p.y);
+        player.pixiObj.scale.set(s);
+        player.pixiObj.zIndex = 0;
+        
+        player.body.rotation = player.angle;
 
-                // Pulse Blaster Range (Skill 1) - 6 Grid Squares = 1200 units
-                ctx.strokeStyle = 'rgba(0, 210, 255, 0.05)';
-                ctx.beginPath(); ctx.arc(0,0,1200,0,Math.PI*2); ctx.stroke();
-
-                // EMP (Skill 2) - reduced 40% to 270
-                ctx.strokeStyle = 'rgba(51, 204, 255, 0.1)';
-                ctx.beginPath(); ctx.arc(0,0,270,0,Math.PI*2); ctx.stroke();
-                
-                // Warp Dash (Skill 3 limit) - reduced 40% to 300
-                ctx.strokeStyle = 'rgba(153, 51, 255, 0.08)';
-                ctx.beginPath(); ctx.arc(0,0,300,0,Math.PI*2); ctx.stroke();
-                
-                // Singularity Placement Indicator - reduced 40% to 360
-                ctx.strokeStyle = 'rgba(255, 0, 85, 0.05)';
-                ctx.beginPath(); ctx.arc(0,0,360,0,Math.PI*2); ctx.stroke();
-
-                // Dash Cooldown Indicator
-                if(player.timers.dodge > 0) {
-                    let dodgeProgress = player.timers.dodge / 2.0;
-                    ctx.strokeStyle = `rgba(255, 255, 255, 0.5)`;
-                    ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.arc(0,0,32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * dodgeProgress); ctx.stroke();
-                }
-
-                ctx.rotate(player.angle);
-                
-                if (player.timers.immunity > 0) {
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#fff';
-                }
-
-                // Ship Body
-                ctx.fillStyle = '#111';
-                ctx.strokeStyle = player.timers.immunity > 0 ? '#fff' : varColor('--accent');
-                ctx.lineWidth = player.timers.immunity > 0 ? 3 : 2;
-                ctx.beginPath();
-                ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-10, 0); ctx.lineTo(-15, -15);
-                ctx.closePath();
-                ctx.fill(); ctx.stroke();
-                
-                ctx.shadowBlur = 0;
-
-                // Shields
-                if(player.stats.shields > 0) {
-                    ctx.strokeStyle = `rgba(51, 204, 255, ${0.2 + (player.stats.shields/player.stats.maxShields)*0.5})`;
-                    ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.arc(0,0,25,0,Math.PI*2); ctx.stroke();
-                }
-                ctx.restore();
-            }
+        let accentHex = parseColor(varColor('--accent'));
+        if (player.timers.immunity > 0 || player.timers.flash > 0) {
+            player.body.tint = 0xffffff;
         } else {
-            obj.draw(ctx);
+            player.body.tint = accentHex;
         }
+        
+        player.rangeOverlays.clear();
+        player.rangeOverlays.lineStyle(1, 0x00d2ff, 0.05); player.rangeOverlays.drawCircle(0, 0, 1200);
+        player.rangeOverlays.lineStyle(1, 0x33ccff, 0.1); player.rangeOverlays.drawCircle(0, 0, 270);
+        player.rangeOverlays.lineStyle(1, 0x9933ff, 0.08); player.rangeOverlays.drawCircle(0, 0, 300);
+        player.rangeOverlays.lineStyle(1, 0xff0055, 0.05); player.rangeOverlays.drawCircle(0, 0, 360);
+
+        if(player.timers.dodge > 0) {
+            let dodgeProgress = player.timers.dodge / 2.0;
+            player.rangeOverlays.lineStyle(2, 0xffffff, 0.5);
+            player.rangeOverlays.arc(0, 0, 32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * dodgeProgress);
+        }
+
+        player.shieldGraphics.clear();
+        if(player.stats.shields > 0) {
+            let shieldAlpha = 0.2 + (player.stats.shields/player.stats.maxShields)*0.5;
+            player.shieldGraphics.lineStyle(2, 0x33ccff, shieldAlpha);
+            player.shieldGraphics.drawCircle(0,0,25);
+        }
+    } else {
+        player.pixiObj.visible = false;
     }
 
-    // Floating Text (Always on top)
-    for(let ft of floatingTexts) {
-        ft.draw(ctx);
-    }
+    for(let i=0; i<floatingTexts.length; i++) floatingTexts[i].draw();
 
-    // Danger Screen Glow Overlay
+    // Danger UI Overlay
+    GAME.graphics.damageGlow.clear();
     if (player.damageIntensity > 0.1) {
         let alpha = Math.min(0.6, player.damageIntensity * 0.5);
-        let grad = ctx.createRadialGradient(cw/2, ch/2, Math.min(cw,ch)*0.2, cw/2, ch/2, Math.max(cw,ch)*0.8);
-        grad.addColorStop(0, 'rgba(255,0,0,0)');
-        grad.addColorStop(1, `rgba(255,0,0,${alpha})`);
-        ctx.fillStyle = grad;
-        ctx.fillRect(0,0,cw,ch);
+        GAME.graphics.damageGlow.beginFill(0xff0000, alpha);
+        GAME.graphics.damageGlow.drawRect(0, 0, cw, ch);
+        GAME.graphics.damageGlow.endFill();
     }
 
+    GAME.graphics.bossIndicator.visible = false;
     if (GAME.activeBoss && !project(GAME.activeBoss.x, GAME.activeBoss.y, GAME.activeBoss.z)) {
         let angleToBoss = MathUtils.angle(player.x, player.y, GAME.activeBoss.x, GAME.activeBoss.y);
         let screenX = cw/2 + Math.cos(angleToBoss) * (cw/2 - 40);
@@ -677,14 +737,9 @@ function draw() {
         screenX = MathUtils.clamp(screenX, 40, cw - 40);
         screenY = MathUtils.clamp(screenY, 40, ch - 40);
 
-        ctx.save();
-        ctx.translate(screenX, screenY);
-        ctx.rotate(angleToBoss + Math.PI/2);
-        let icon = getIcon('BossSkull', '#ff0000');
-        if (icon.img.complete) {
-            ctx.drawImage(icon.img, -15, -15, 30, 30);
-        }
-        ctx.restore();
+        GAME.graphics.bossIndicator.visible = true;
+        GAME.graphics.bossIndicator.position.set(screenX, screenY);
+        GAME.graphics.bossIndicator.rotation = angleToBoss + Math.PI/2;
     }
 
     drawMinimap();
@@ -797,6 +852,7 @@ function useFuelCell() {
 
 // Setup
 player.updateStats();
+initPixi();
 initMap();
 player.stats.fuel = player.stats.maxFuel; // Start full
 inventory[0] = {
