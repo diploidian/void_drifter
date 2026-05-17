@@ -232,8 +232,8 @@ function useSkill(index) {
         } else if (hasTriple) {
             playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserLarge_001.ogg', 0.5, pitch);
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
-            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
-            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/25, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/25, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
             playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserSmall_004.ogg', 0.5, pitch);
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
@@ -301,18 +301,24 @@ function update(dt) {
         ay /= len;
     }
 
-    let currentMaxSpeed = player.stats.maxSpeed;
-    if (player.timers.dashActive > 0) {
-        currentMaxSpeed *= 2;
+    let isThrustingInput = (ax !== 0 || ay !== 0);
+
+    if (GAME.keys[' '] && isThrustingInput) {
+        player.timers.boostCharge = Math.min(2.0, (player.timers.boostCharge || 0) + dt);
+    } else {
+        player.timers.boostCharge = Math.max(0, (player.timers.boostCharge || 0) - dt * 4.0); // fast decay
     }
+    
+    let boostMult = 1.0 + 0.5 * ((player.timers.boostCharge || 0) / 2.0);
+    let currentMaxSpeed = player.stats.maxSpeed * boostMult;
 
     if(player.timers.mycelialDebuff > 0) {
         player.timers.mycelialDebuff -= dt;
         currentMaxSpeed *= 0.7; // 30% Slow
         
-        // Drain 10% energy over 2 seconds => 5% per second
-        player.stats.energy -= (player.stats.maxEnergy * 0.05) * dt;
-        if(player.stats.energy < 0) player.stats.energy = 0;
+        // Drain shields 5% per second
+        player.stats.shields -= (player.stats.maxShields * 0.05) * dt;
+        if(player.stats.shields < 0) player.stats.maxShields = 0;
         
         if(Math.random() < dt * 10) {
             createParticles(player.x + MathUtils.rand(-15, 15), player.y + MathUtils.rand(-15, 15), 0, 1, '#99ff33', 0.5);
@@ -332,8 +338,9 @@ function update(dt) {
 
     let isThrusting = (ax !== 0 || ay !== 0);
     if (isThrusting) {
-        player.vx += ax * player.stats.acceleration * dt;
-        player.vy += ay * player.stats.acceleration * dt;
+        let accelMult = GAME.keys[' '] ? 1.5 : 1.0;
+        player.vx += ax * player.stats.acceleration * accelMult * dt;
+        player.vy += ay * player.stats.acceleration * accelMult * dt;
     } else {
         player.vx *= player.stats.friction;
         player.vy *= player.stats.friction;
@@ -345,25 +352,14 @@ function update(dt) {
         player.vx *= ratio; player.vy *= ratio;
     }
 
-    // Dodge
-    if(GAME.keys[' '] && player.timers.dodge <= 0) {
-        if(ax !== 0 || ay !== 0) {
+    // Engine Boost Effects
+    if(GAME.keys[' '] && isThrustingInput) {
+        if(Math.random() < dt * 20) {
             let moveAngle = Math.atan2(ay, ax);
-            player.timers.dashActive = 0.4;
-            player.timers.dodge = 2.0; // cooldown
-            player.timers.immunity = 1.0;
-            
-            let dashSpeed = player.stats.maxSpeed * 2;
-            if (player.timers.mycelialDebuff > 0) dashSpeed *= 0.7;
-            
-            player.vx = Math.cos(moveAngle) * dashSpeed;
-            player.vy = Math.sin(moveAngle) * dashSpeed;
-            createParticles(player.x, player.y, 0, 20, varColor('--accent'));
+            createParticles(player.x - Math.cos(moveAngle) * 15 + MathUtils.rand(-5,5), player.y - Math.sin(moveAngle) * 15 + MathUtils.rand(-5,5), 0, 1, varColor('--accent'), 0.5);
         }
     }
-    if(player.timers.dodge > 0) player.timers.dodge -= dt;
     if(player.timers.immunity > 0) player.timers.immunity -= dt;
-    if(player.timers.dashActive > 0) player.timers.dashActive -= dt;
 
     // Apply movement
     if(player.stats.fuel > 0 || speed < 50) {
@@ -374,8 +370,8 @@ function update(dt) {
         player.y = MathUtils.clamp(player.y, -WORLD_SIZE, WORLD_SIZE);
     } else {
         // Out of fuel, severely crippled movement
-        player.x += (player.vx * 0.1) * dt;
-        player.y += (player.vy * 0.1) * dt;
+        player.x += (player.vx * 0.2) * dt;
+        player.y += (player.vy * 0.2) * dt;
     }
 
     // Facing angle
@@ -436,7 +432,14 @@ function update(dt) {
             eff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
         }
         
-        player.stats.fuel -= (speed / player.stats.maxSpeed) * 9 * eff * dt;
+        // 1. Calculate the base drain
+        let baseDrain = (speed / player.stats.maxSpeed) * 9 * eff * dt;        
+        // 2. Calculate the flat reduction for this specific frame
+        let flatReduction = (player.stats.flatFuelReduction || 0) * dt;
+        // 3. Apply the reduction, preventing negative drain (healing)
+        let finalDrain = Math.max(0, baseDrain - flatReduction);
+        
+        player.stats.fuel -= finalDrain;
         if(player.stats.fuel < 0) player.stats.fuel = 0;
         // Engine particles
         if(Math.random() < 0.5) {
@@ -457,15 +460,107 @@ function update(dt) {
         }
     }
 
+    // --- Thruster Audio Loop ---
+    if (!GAME.thrusterAudio) {
+        GAME.thrusterAudio = new Audio('sounds/thruster.ogg');
+        GAME.thrusterAudio.loop = true;
+        GAME.thrusterAudio.volume = 0;
+        GAME.thrusterAudio.preservesPitch = false;
+        GAME.thrusterAudio.mozPreservesPitch = false;
+        GAME.thrusterAudio.webkitPreservesPitch = false;
+        // Attempt to start playing (will succeed once player has interacted with the page)
+        GAME.thrusterAudio.play().catch(() => {});
+    }
+
+    if (GAME.thrusterAudio && !GAME.thrusterAudio.paused) {
+        let baseMax = player.stats.maxSpeed;
+        
+        // 1. Volume Calculation
+        let targetVol = 0;
+        if (speed >= 10) {
+            // Scales from 30% at 10 speed to 100% at maxSpeed
+            targetVol = 0.3 + 0.7 * Math.min(1.0, (speed - 10) / Math.max(1, baseMax - 10));
+        } else if (speed > 0.5) {
+            // Fades out below 10 speed
+            targetVol = 0.3 * (speed / 10);
+        }
+        GAME.thrusterAudio.volume = targetVol;
+
+        // 2. Pitch Calculation (Semitones)
+        let baseSemi = -2;
+        if (speed >= 10) {
+            // Scales from -2 to 0 between 10 speed and 50% maxSpeed
+            baseSemi = -2 + 2 * Math.min(1.0, (speed - 10) / Math.max(1, (baseMax * 0.5) - 10));
+        }
+        
+        // 3. Boost Pitch Calculation
+        let boostProgress = (player.timers.boostCharge || 0) / 2.0;
+        let finalSemi = baseSemi + (7 * boostProgress);
+        
+        GAME.thrusterAudio.playbackRate = Math.pow(2, finalSemi / 12);
+    }
+
     for(let i=0; i<4; i++) {
         if(player.skills[i].cd > 0) player.skills[i].cd -= dt;
     }
 
     // --- Entity Updates ---
     for(let i=entities.length-1; i>=0; i--) {
-        if(entities[i].dead) {
+        let e = entities[i];
+        if(e.dead) {
             entities.splice(i, 1);
-        } else if(entities[i].update(dt)) {
+            continue;
+        }
+        
+        if (e instanceof Enemy || e instanceof BrutalistMonolith || e instanceof FungalNode) {
+            if (e.ramCooldown === undefined) e.ramCooldown = 0;
+            if (e.ramCooldown > 0) e.ramCooldown -= dt;
+            
+            if (e.z <= 0) {
+                let distToPlayer = MathUtils.distance(e.x, e.y, player.x, player.y);
+                if (distToPlayer < (player.radius + e.radius)) {
+                    if (e.ramCooldown <= 0) {
+                        e.ramCooldown = 0.4;
+                        
+                        let currentSpeed = Math.hypot(player.vx, player.vy);
+                        let speedDelta = Math.max(0, currentSpeed - player.stats.maxSpeed);
+                        
+                        // 1% extra damage per unit of speed over base maxSpeed
+                        let momentumMult = 1.0 + (speedDelta * 0.01);
+                        // Progress towards the theoretical 1.5x max boost (0.0 to 1.0)
+                        let boostProgress = Math.min(1.0, speedDelta / (player.stats.maxSpeed * 0.5));
+
+                        let totalDamagePool = (player.stats.damage.min + player.stats.damage.max) / 2;
+                        let rating = player.stats.collisionRating || player.stats.collisionDamage || 0;
+                        let multiplier = getCollisionMultiplier(rating, player.level);
+                        let finalDamage = totalDamagePool * multiplier * momentumMult;
+
+                        // Take recoil. Reduces recoil by up to 80% at maximum boost speed
+                        // Cap the damage used for recoil to the enemy's current HP to prevent overkill suicide!
+                        let effectiveDamage = Math.min(finalDamage, e.hp);
+                        let baseRecoil = effectiveDamage * 0.25; // Dropped from 50% to 25% for better survivability
+                        let recoil = baseRecoil * (1.0 - (boostProgress * 0.8));
+                        if (recoil > 0) player.takeDamage(recoil, e);
+
+                        // Using a proxy source with 0 critChance bypasses crit rules
+                        let dummySource = { stats: { critChance: 0 } };
+                        e.takeDamage(finalDamage, dummySource, '#ff8800');
+
+                        // Player forces their way through, transferring knockback to the enemy
+                        let bounceAngle = Math.atan2(e.y - player.y, e.x - player.x);
+                        e.vx = Math.cos(bounceAngle) * (400 * momentumMult);
+                        e.vy = Math.sin(bounceAngle) * (400 * momentumMult);
+                        
+                        createParticles(e.x, e.y, e.z, 15 + (15 * boostProgress), '#ff8800');
+                        shockwaves.push(new Shockwave(e.x, e.y, e.z, '#ff8800', 40 + (20 * boostProgress)));
+                    }
+                }
+            }
+        }
+
+        if (e.dead) {
+            entities.splice(i, 1);
+        } else if(e.update(dt)) {
             entities.splice(i, 1);
         }
     }
@@ -577,7 +672,8 @@ function update(dt) {
     let dist = MathUtils.rand(800, 1200);
     if (GAME.bossDefeated && Math.random() < 0.20) {
         let r = Math.random();
-        if (r < 0.5) {
+        let spreaderCount = entities.filter(ent => ent instanceof MycelialSpreader).length;
+        if (r < 0.5 && spreaderCount < 4) {
             entities.push(new MycelialSpreader(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
         } else {
             entities.push(new MonolithArchitect(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
@@ -719,10 +815,10 @@ function draw() {
         player.rangeOverlays.lineStyle(1, 0x9933ff, 0.08); player.rangeOverlays.drawCircle(0, 0, 300);
         player.rangeOverlays.lineStyle(1, 0xff0055, 0.05); player.rangeOverlays.drawCircle(0, 0, 360);
 
-        if(player.timers.dodge > 0) {
-            let dodgeProgress = player.timers.dodge / 2.0;
+        if(player.timers.boostCharge > 0) {
+            let boostProgress = player.timers.boostCharge / 2.0;
             player.rangeOverlays.lineStyle(2, 0xffffff, 0.5);
-            player.rangeOverlays.arc(0, 0, 32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * dodgeProgress);
+            player.rangeOverlays.arc(0, 0, 32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * boostProgress);
         }
 
         player.shieldGraphics.clear();
@@ -884,7 +980,7 @@ inventory[0] = {
     tier: 0,
     itemLevel: 1,
     stackable: true,
-    count: 3,
+    count: 5,
     desc: 'Restores 20 Fuel on use.'
 };
 renderInventory();

@@ -15,11 +15,12 @@ let equipment = {
 // Base stats
 const BASE_STATS = {
     maxHp: 100, hp: 100, armorRating: 0, damageReduction: 0, hpRegen: 0,
-    maxShields: 50, shields: 50, shieldRegen: 5, shieldRegenPersistent: 0,
-    maxEnergy: 100, energy: 100, energyRegen: 10,
-    maxFuel: 100, fuel: 100, fuelEfficiency: 1.0,
-    maxSpeed: 200, acceleration: 600, friction: 0.95,
-    damage: { min: 9, max: 13 }, fireRate: 100, critChance: 5, critRating: 0
+    maxShields: 25, shields: 25, shieldRegen: 5, shieldRegenPersistent: 0,
+    maxEnergy: 100, energy: 100, energyRegen: 4, energyOnKill: 0,
+    maxFuel: 100, fuel: 100, fuelEfficiency: 1.0, flatFuelReduction: 0,
+    maxSpeed: 200, acceleration: 400, friction: 0.95,
+    damage: { min: 9, max: 13 }, fireRate: 100, fireRateRating: 0, critChance: 5, critRating: 0, critDamage: 145,
+    collisionRating: 0, collisionDamage: 0
 };
 
 const AUGMENT_POOL = [
@@ -60,7 +61,7 @@ const AUGMENT_POOL = [
         id: 'fuelAtomizer', name: 'Fuel Atomizer', color: '#ffcc00',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 4.2c1.88 1.4 3.34 3.73 3.34 6.11 0 4.97-4.03 9-9 9s-9-4.03-9-9c0-2.38 1.46-4.71 3.34-6.11L12 2.69z"/></svg>',
         roll: () => MathUtils.rand(0.1, 0.4), desc: (v) => `-${v.toFixed(2)} Fuel Consumption`,
-        effect: (v) => { BASE_STATS.fuelEfficiency -= v; }
+        effect: (v) => { BASE_STATS.flatFuelReduction += v; }
     },
     {
         id: 'persistentShieldLink', name: 'Persistent Shield Link', color: '#33ccff',
@@ -137,7 +138,7 @@ const player = {
             
             // Level Up Rewards
             // Level Up Rewards (Base Stats Scaling)
-            BASE_STATS.maxHp += 5;
+            BASE_STATS.maxHp += 10;
             BASE_STATS.damage.min += 1;
             BASE_STATS.damage.max += 2;
             
@@ -168,8 +169,8 @@ const player = {
             this.statBreakdown[key] = { base: BASE_STATS[key], items: [] };
         }
         
-        let totalFireRateRating = 0;
-        let totalCritRating = 0;
+        let totalFireRateRating = this.stats.fireRateRating || 0;
+        let totalCritRating = this.stats.critRating || 0;
 
         // Add equip modifiers
         for (let key in equipment) {

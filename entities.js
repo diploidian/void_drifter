@@ -168,6 +168,8 @@ class Enemy {
             this.knockbackVy = 0;
         }
         this.color = this.type === 'chaser' ? '#ff0055' : '#00ffcc';
+        this.inMeleeRange = false;
+        this.windupCooldown = 0;
         
         this.flashTimer = 0;
         this.baseTint = this.type === 'chaser' ? 0xff0055 : (this.type === 'boss' ? 0xff4400 : 0x00ffcc);
@@ -239,6 +241,13 @@ class Enemy {
             
             // Melee attack
             if (dist < 20 + player.radius) {
+                if (!this.inMeleeRange) {
+                    this.inMeleeRange = true;
+                    if (this.attackTimer <= 0 && this.windupCooldown <= 0) {
+                        this.attackTimer = 0.45;
+                        this.windupCooldown = MathUtils.rand(1.0, 4.0);
+                    }
+                }
                 if (this.attackTimer <= 0) {
                     player.takeDamage(getDamage(this) * this.meleeMult, this);
                     this.attackTimer = 1.0;
@@ -271,6 +280,8 @@ class Enemy {
                         player.takeDamage(getDamage(this), this);
                     }
                 }
+            } else {
+                this.inMeleeRange = false;
             }
         } else {
         
@@ -396,6 +407,10 @@ class Enemy {
             }
             player.totalKills++;
             player.killsThisLevel++;
+
+            if (player.stats.energyOnKill > 0) {
+                player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + player.stats.energyOnKill);
+            }
 
             let isNormalFlak = source === player && equipment['Secondary Weapon'] && equipment['Secondary Weapon'].perk === 'Explosive Enemies';
             let isChainedFlak = source.isFlak && source.upgradedFlak;
@@ -622,14 +637,26 @@ class MycelialSpreader extends Enemy {
             this.stunTimer -= dt;
             return false;
         }
+        if (this.windupCooldown > 0) this.windupCooldown -= dt;
         if (this.dead) return true;
         
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
         
         if (this.attackTimer > 0) this.attackTimer -= dt;
-        if (dist < this.radius + player.radius && this.attackTimer <= 0) {
-            player.takeDamage(getDamage(this) * this.spreaderDamageMult, this);
-            this.attackTimer = 1.0;
+        if (dist < this.radius + player.radius) {
+            if (!this.inMeleeRange) {
+                this.inMeleeRange = true;
+                if (this.attackTimer <= 0 && this.windupCooldown <= 0) {
+                    this.attackTimer = 0.45;
+                    this.windupCooldown = MathUtils.rand(1.0, 4.0);
+                }
+            }
+            if (this.attackTimer <= 0) {
+                player.takeDamage(getDamage(this) * this.spreaderDamageMult, this);
+                this.attackTimer = 1.0;
+            }
+        } else {
+            this.inMeleeRange = false;
         }
         
         if (this.networkPhase === 'IDLE') {
@@ -771,6 +798,7 @@ class BrutalistMonolith extends Asteroid {
         this.telegraphTimer = 1.5;
         this.damage = damage;
         this.source = source;
+        this.life = 30.0;
         
         this.pixiObj = new PIXI.Container();
         this.telegraphGraphics = new PIXI.Graphics();
@@ -808,6 +836,15 @@ class BrutalistMonolith extends Asteroid {
     update(dt) {
         if (this.flashTimer > 0) this.flashTimer -= dt;
         if (this.telegraphTimer > 0) this.telegraphTimer -= dt;
+        this.life -= dt;
+        if (this.life <= 0) {
+            this.dead = true;
+            if (this.pixiObj) {
+                this.pixiObj.destroy({ children: true });
+                this.pixiObj = null;
+            }
+            createParticles(this.x, this.y, this.z, 20, '#ff3366');
+        }
     }
     draw() {
         let p = project(this.x, this.y, this.z);
@@ -1481,6 +1518,8 @@ class Boss extends Enemy {
             return;
         }
 
+        if (this.windupCooldown > 0) this.windupCooldown -= dt;
+
         for(let ab of this.abilities) if(ab.cd > 0) ab.cd -= dt;
 
         let dist = MathUtils.distance(this.x, this.y, player.x, player.y);
@@ -1530,9 +1569,20 @@ class Boss extends Enemy {
             this.vx = Math.cos(angle) * this.speed;
             this.vy = Math.sin(angle) * this.speed;
             
-            if (dist < this.radius + player.radius && this.attackTimer <= 0) {
-                player.takeDamage(getDamage(this) * this.contactDamageMult, this);
-                this.attackTimer = 1.0;
+            if (dist < this.radius + player.radius) {
+                if (!this.inMeleeRange) {
+                    this.inMeleeRange = true;
+                    if (this.attackTimer <= 0 && this.windupCooldown <= 0) {
+                        this.attackTimer = 0.45;
+                        this.windupCooldown = MathUtils.rand(1.0, 4.0);
+                    }
+                }
+                if (this.attackTimer <= 0) {
+                    player.takeDamage(getDamage(this) * this.contactDamageMult, this);
+                    this.attackTimer = 1.0;
+                }
+            } else {
+                this.inMeleeRange = false;
             }
         }
 
@@ -1830,9 +1880,8 @@ class WarpTrail {
 class Drop {
     constructor(x, y, forceResource = false, item = null) {
         this.x = x; this.y = y; this.z = 0;
-        this.item = generateLoot(forceResource ? null : undefined);
         this.item = item || generateLoot(forceResource ? null : undefined);
-        this.color = TIERS[this.item.tier].color;
+        this.color = this.item.type === 'Fuel' ? '#ffff00' : TIERS[this.item.tier].color;
         this.iconInfo = getIcon(this.item.type, this.color);
         this.hoverOffset = Math.random() * Math.PI * 2;
         
@@ -1894,7 +1943,8 @@ class Drop {
             this.sprite.visible = true;
             let s = getScale(this.z);
             this.sprite.position.set(p.x, p.y + Math.sin(this.hoverOffset) * 5 * s);
-            this.sprite.scale.set(s * 0.5); // SVG rendered at 48x48, scale back to 24
+            let scaleMult = this.item.type === 'Fuel' ? 0.75 : 0.5;
+            this.sprite.scale.set(s * scaleMult); // SVG rendered at 48x48, scale back to 24 (or 36)
             this.sprite.zIndex = this.z;
         }
     }
@@ -2249,7 +2299,35 @@ function spawnDrop(x, y, forceResource = false, item = null) {
 }
 
 function spawnBoss() {
-    entities = entities.filter(e => !(e instanceof Enemy));
+    for (let i = entities.length - 1; i >= 0; i--) {
+        let e = entities[i];
+        if (e instanceof Enemy) {
+            e.dead = true;
+            if (e.pixiObj) {
+                e.pixiObj.destroy({ children: true });
+                e.pixiObj = null;
+            }
+            if (e.type === 'spreader') {
+                for (let net of e.networks) {
+                    for (let node of net) {
+                        node.dead = true;
+                        if (node.pixiObj) {
+                            node.pixiObj.destroy({ children: true });
+                            node.pixiObj = null;
+                        }
+                    }
+                }
+                for (let node of e.currentNetwork) {
+                    node.dead = true;
+                    if (node.pixiObj) {
+                        node.pixiObj.destroy({ children: true });
+                        node.pixiObj = null;
+                    }
+                }
+            }
+            entities.splice(i, 1);
+        }
+    }
     let angle = Math.random() * Math.PI * 2;
     let dist = 10 * 200; // 10 grid squares
     let boss = new Boss(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist);

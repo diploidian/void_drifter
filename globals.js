@@ -86,7 +86,8 @@ function calculateCrit(amount, source) {
     if (source && source.stats && source.stats.critChance) {
         if (Math.random() * 100 < source.stats.critChance) {
             isCrit = true;
-            amount *= 1.45;
+            let critMult = source.stats.critDamage ? (source.stats.critDamage / 100) : 1.45;
+            amount *= critMult;
         }
     }
     return { amount, isCrit };

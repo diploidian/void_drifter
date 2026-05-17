@@ -55,6 +55,34 @@ function handleDrop(e, targetType, targetId) {
     dragSource = null;
 }
 
+function findStatLineIndex(statLines, statKey) {
+    if (!statLines) return -1;
+    const mapping = {
+        'fireRateRating': 'Fire Rate Rating',
+        'damage': 'Damage',
+        'critRating': 'Crit Rating',
+        'critDamage': 'Crit Damage',
+        'collisionDamage': 'Collision Damage',
+        'energyOnKill': 'Energy on Kill',
+        'maxHp': 'Max HP',
+        'armorRating': 'Armor Rating',
+        'maxShields': 'Max Shields',
+        'shieldRegen': 'Shield/sec',
+        'maxSpeed': 'Max Speed',
+        'acceleration': 'Thrust',
+        'maxEnergy': 'Max Energy',
+        'energyRegen': 'Energy/sec'
+    };
+    let matchText = mapping[statKey] || statKey;
+    return statLines.findIndex(l => {
+        if (l.startsWith('[PERK]')) return false;
+        if (statKey === 'damage') {
+            return l.includes('Damage') && !l.includes('Crit') && !l.includes('Collision');
+        }
+        return l.includes(matchText);
+    });
+}
+
 function openUpgradeModal(targetItem, srcInfo, tgtType, tgtId) {
     pendingUpgrade = { item: targetItem, srcInfo, tgtType, tgtId };
     let modal = document.getElementById('upgrade-modal');
@@ -64,8 +92,8 @@ function openUpgradeModal(targetItem, srcInfo, tgtType, tgtId) {
     for (let stat in targetItem.stats) {
         let btn = document.createElement('button');
         btn.className = 'upg-btn';
-        let line = targetItem.statLines.find(l => !l.startsWith('[PERK]') && l.toLowerCase().includes(stat.replace('Rating', '').toLowerCase()));
-        if(!line) line = `Upgrade ${stat}`;
+        let idx = findStatLineIndex(targetItem.statLines, stat);
+        let line = idx !== -1 ? targetItem.statLines[idx] : `Upgrade ${stat}`;
         btn.innerHTML = `Buff: ${line}`;
         btn.onclick = () => confirmUpgrade(stat);
         opts.appendChild(btn);
@@ -118,7 +146,7 @@ function confirmUpgrade(choice) {
         }
     } else {
         let oldMult = 1 + (item.itemLevel - 1) * 0.15;
-        let newMult = 1 + (item.itemLevel + 2) * 0.15;
+        let newMult = 1 + (player.level + 3) * 0.20;
         let ratio = newMult / oldMult;
 
         let val = item.stats[choice];
@@ -137,7 +165,7 @@ function confirmUpgrade(choice) {
             newStr = item.stats[choice].toString();
         }
 
-        let sIdx = item.statLines.findIndex(l => !l.startsWith('[PERK]') && l.includes(oldStr));
+        let sIdx = findStatLineIndex(item.statLines, choice);
         if (sIdx !== -1) item.statLines[sIdx] = `<b>${item.statLines[sIdx].replace(oldStr, newStr)}</b>`;
     }
 
@@ -217,22 +245,48 @@ function updateUI() {
     document.getElementById('hp-fill').style.width = `${(player.stats.hp / player.stats.maxHp)*100}%`;
     document.getElementById('hp-text').innerText = `HP: ${Math.floor(player.stats.hp)}/${player.stats.maxHp}`;
     
+    let hpWrap = document.getElementById('hp-fill').parentElement;
+    let hpRegenTotal = player.stats.hpRegen || 0;
+    if (equipment['Hull'] && equipment['Hull'].perk === 'Repairis') {
+        hpRegenTotal += player.stats.maxHp * (equipment['Hull'].upgradedPerk ? 0.006 : 0.005);
+    }
+    hpWrap.onmouseover = (e) => showTooltip('Hull Integrity', `Maximum structure health. If this reaches 0, your ship is destroyed.<br><br>Max HP Regen: <span style="color:#0f0">${hpRegenTotal.toFixed(1)} /sec</span>`, '', e);
+    hpWrap.onmouseout = hideTooltip;
+    
     let sMax = player.stats.maxShields || 1;
     document.getElementById('shield-fill').style.width = `${(player.stats.shields / sMax)*100}%`;
     document.getElementById('shield-text').innerText = `SH: ${Math.floor(player.stats.shields)}/${player.stats.maxShields}`;
     
+    let shieldWrap = document.getElementById('shield-fill').parentElement;
+    let sRegen = player.stats.shieldRegen || 0;
+    let sPersist = player.stats.shieldRegenPersistent || 0;
+    shieldWrap.onmouseover = (e) => showTooltip('Energy Shields', `Absorbs incoming damage before your Hull takes hits. Recharges automatically after avoiding damage for 3 seconds.<br><br>Delayed Regen: <span style="color:#0f0">${sRegen.toFixed(1)} /sec</span><br>Persistent Regen: <span style="color:#0f0">${sPersist.toFixed(1)} /sec</span>`, '', e);
+    shieldWrap.onmouseout = hideTooltip;
+    
     document.getElementById('energy-fill').style.width = `${(player.stats.energy / player.stats.maxEnergy)*100}%`;
     document.getElementById('energy-text').innerText = `EN: ${Math.floor(player.stats.energy)}/${player.stats.maxEnergy}`;
+    
+    let energyWrap = document.getElementById('energy-fill').parentElement;
+    let enRegen = player.stats.energyRegen || 0;
+    energyWrap.onmouseover = (e) => showTooltip('Reactor Energy', `Powers your ship's active skills and weapon systems.<br><br>Energy Regen: <span style="color:#0f0">${enRegen.toFixed(1)} /sec</span>`, '', e);
+    energyWrap.onmouseout = hideTooltip;
     
     document.getElementById('fuel-fill').style.width = `${(player.stats.fuel / player.stats.maxFuel)*100}%`;
     document.getElementById('fuel-text').innerText = `FUEL: ${Math.floor(player.stats.fuel)}`;
 
-    let fuelEff = (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') ? 0.75 : 1.0;
+    let fuelEff = 1.0;
+    if (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') {
+        fuelEff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
+    }
     fuelEff *= player.stats.fuelEfficiency !== undefined ? player.stats.fuelEfficiency : 1.0;
-    let consumption = (15 * fuelEff).toFixed(2);
+    
+    let baseDrain = 9 * fuelEff;
+    let flatReduction = player.stats.flatFuelReduction || 0;
+    let finalDrain = Math.max(0, baseDrain - flatReduction).toFixed(2);
     
     let fuelWrap = document.getElementById('fuel-fill').parentElement;
-    fuelWrap.onmouseover = (e) => showTooltip('Thruster Fuel', `Drains when moving. Replenish from asteroids and enemies.<br><br>Max Speed Drain: <span style="color:#0f0">${consumption} /sec</span>`, '', e);
+    fuelWrap.onmouseover = (e) => showTooltip('Thruster Fuel', `Drains when moving. Replenish from asteroids and enemies.<br><br>Max Speed Drain: <span style="color:#0f0">${finalDrain} /sec</span>`, '', e);
+    fuelWrap.onmouseout = hideTooltip;
 
     // Skills CD & Energy check
     for(let i=0; i<4; i++) {
@@ -266,6 +320,39 @@ function updateUI() {
 
 function renderInventory() {
     const grid = document.getElementById('inventory-grid');
+    
+    let scrapBar = document.getElementById('scrap-bar');
+    if (!scrapBar) {
+        scrapBar = document.createElement('div');
+        scrapBar.id = 'scrap-bar';
+        scrapBar.style.display = 'flex';
+        scrapBar.style.justifyContent = 'center';
+        scrapBar.style.gap = '10px';
+        scrapBar.style.marginBottom = '15px';
+        
+        for (let i = 1; i <= 5; i++) {
+            let btn = document.createElement('button');
+            btn.className = 'scrap-btn';
+            btn.style.width = '40px';
+            btn.style.height = '40px';
+            btn.style.background = 'rgba(0, 0, 0, 0.5)';
+            btn.style.border = `2px solid ${TIERS[i].color}`;
+            btn.style.borderRadius = '5px';
+            btn.style.cursor = 'pointer';
+            btn.style.display = 'flex';
+            btn.style.alignItems = 'center';
+            btn.style.justifyContent = 'center';
+            
+            btn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" stroke="${TIERS[i].color}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+            btn.onmouseover = (e) => showTooltip(`Auto-Scrap ${TIERS[i].name}`, `Scraps all unequipped ${TIERS[i].name} gear into Core fragments.`, '', e);
+            btn.onmouseout = hideTooltip;
+            btn.onclick = () => scrapAllByTier(i);
+            
+            scrapBar.appendChild(btn);
+        }
+        grid.parentNode.insertBefore(scrapBar, grid);
+    }
+
     grid.innerHTML = '';
     for (let i = 0; i < INVENTORY_SIZE; i++) {
         let item = inventory[i];
@@ -275,7 +362,7 @@ function renderInventory() {
             if (item.upgraded || item.type === 'Upgrade Material') {
                 div.classList.add('holographic');
             }
-            let color = TIERS[item.tier].color;
+            let color = item.type === 'Fuel' ? '#ffff00' : TIERS[item.tier].color;
             let iconInfo = getIcon(item.type, color);
             // Safely inject raw SVG instead of an image tag to prevent attribute breakout
             div.innerHTML = `
@@ -336,38 +423,119 @@ function renderEquipment() {
 function renderStats() {
     const container = document.getElementById('stats-list-container');
     
-    function getStatHtml(key, name, desc, formatFn = val => val) {
+    function getStatHtml(key, name, desc, extraLines = [], formatFn = val => val) {
         let bd = player.statBreakdown[key];
         let val = player.stats[key];
-        // Use double quotes for style attributes inside the tooltip
-        let tooltip = `<b>${name}</b><br><span style="color:#ccc; font-size:12px;">${desc}</span><br><br>Total: <span style="color:var(--accent)">${formatFn(val)}</span><br>Base: ${formatFn(bd.base)}<br>`;
-        for(let i of bd.items) {
-            let displayVal = typeof i.val === 'object' ? i.val : (typeof i.val === 'string' ? i.val : formatFn(i.val));
-            let cleanDisplayVal = typeof displayVal === 'object' ? `${displayVal.min}-${displayVal.max}` : displayVal;
-            tooltip += `<span style="color:#0f0">+${cleanDisplayVal} from ${i.name}</span><br>`;
+        let baseText = (bd && bd.base !== undefined) ? `Base: ${formatFn(bd.base)}<br>` : '';
+        
+        let tooltip = `<b>${name}</b><br><span style="color:#ccc; font-size:12px;">${desc}</span><br><br>Total: <span style="color:var(--accent)">${formatFn(val)}</span><br>${baseText}`;
+        if (bd && bd.items) {
+            for(let i of bd.items) {
+                let displayVal = typeof i.val === 'object' ? i.val : (typeof i.val === 'string' ? i.val : formatFn(i.val));
+                let cleanDisplayVal = typeof displayVal === 'object' ? `${displayVal.min}-${displayVal.max}` : displayVal;
+                tooltip += `<span style="color:#0f0">+${cleanDisplayVal} from ${i.name}</span><br>`;
+            }
         }
-        // Properly escape double quotes for HTML attribute, and single quotes for JS evaluation
+        for(let line of extraLines) {
+            tooltip += `<span style="color:#0f0">${line}</span><br>`;
+        }
         tooltip = tooltip.replace(/'/g, "\\'").replace(/"/g, "&quot;");
         return `<div class="stat-row" onmouseover="showTooltip('Stat Details', '', '${tooltip}', event)" onmouseout="hideTooltip()">
                     <span>${name}</span><span class="stat-val">${formatFn(val)}</span>
                 </div>`;
     }
 
+    let frExtras = [];
+    if (player.augments['rapidFireRelay']?.totalValue > 0) {
+        frExtras.push(`+${player.augments['rapidFireRelay'].totalValue} Rating from Augments`);
+    }
+
+    let critExtras = [];
+    if (player.augments['targetingComputer']?.totalValue > 0) {
+        critExtras.push(`+${player.augments['targetingComputer'].totalValue} Rating from Augments`);
+    }
+
+    let hpExtras = [];
+    if (player.augments['structuralIntegrity']?.totalValue > 0) {
+        hpExtras.push(`+${player.augments['structuralIntegrity'].totalValue} Max HP from Augments`);
+    }
+    let hpRegenTotal = player.stats.hpRegen || 0;
+    if (equipment['Hull'] && equipment['Hull'].perk === 'Repairis') {
+        hpRegenTotal += player.stats.maxHp * (equipment['Hull'].upgradedPerk ? 0.006 : 0.005);
+    }
+    if (hpRegenTotal > 0) {
+        hpExtras.push(`Regenerating ${hpRegenTotal.toFixed(1)} HP/sec`);
+    }
+
+    let drExtras = [];
+    let armorItems = player.statBreakdown['armorRating'] ? player.statBreakdown['armorRating'].items : [];
+    for (let i of armorItems) {
+        drExtras.push(`+${i.val} Armor Rating from ${i.name}`);
+    }
+    if (player.augments['kineticDampeners']?.totalValue > 0) {
+        drExtras.push(`+${player.augments['kineticDampeners'].totalValue} Armor Rating from Augments`);
+    }
+
+    let shieldExtras = [];
+    if (player.augments['emergencySiphon']?.totalValue > 0) {
+        shieldExtras.push(`+${player.augments['emergencySiphon'].totalValue} Max Shields from Augments`);
+    }
+
+    let srExtras = [];
+    if (player.augments['persistentShieldLink']?.totalValue > 0) {
+        srExtras.push(`+${player.augments['persistentShieldLink'].totalValue.toFixed(1)}/s Persistent Regen from Augments`);
+    }
+    let sPersist = player.stats.shieldRegenPersistent || 0;
+    if (sPersist > 0) {
+        srExtras.push(`Total Persistent Regen: ${sPersist.toFixed(1)}/s`);
+    }
+
+    let enExtras = [];
+    if (player.augments['auxiliaryBattery']?.totalValue > 0) {
+        enExtras.push(`+${player.augments['auxiliaryBattery'].totalValue} Max Energy from Augments`);
+    }
+
+    let enRegenExtras = [];
+    if (player.augments['overclockedCapacitors']?.totalValue > 0) {
+        enRegenExtras.push(`+${player.augments['overclockedCapacitors'].totalValue.toFixed(2)}/s Regen from Augments`);
+    }
+    let eokVal = player.stats.energyOnKill || 0;
+    if (eokVal > 0) {
+        enRegenExtras.push(`Energy on Kill: +${eokVal.toFixed(2)}`);
+    }
+
+    let speedExtras = [];
+    if (player.augments['thrusterTuning']?.totalValue > 0) {
+        speedExtras.push(`+${player.augments['thrusterTuning'].totalValue} Max Speed from Augments`);
+    }
+
+    let collExtras = [];
+    let collItems = player.statBreakdown['collisionDamage'] ? player.statBreakdown['collisionDamage'].items : [];
+    for (let i of collItems) {
+        collExtras.push(`+${i.val} Rating from ${i.name}`);
+    }
+    let collRating = player.stats.collisionDamage || player.stats.collisionRating || 0;
+    let collMult = typeof getCollisionMultiplier === 'function' ? getCollisionMultiplier(collRating, player.level) : 0;
+    let collMin = Math.floor(player.stats.damage.min * collMult);
+    let collMax = Math.floor(player.stats.damage.max * collMult);
+    if (collRating > 0) {
+        collExtras.push(`Damage Range: ${collMin}-${collMax}`);
+    }
+
     container.innerHTML = `
-        ${getStatHtml('damage', 'Damage', 'Base damage for your weapons and abilities.', v => v.min + '-' + v.max)}
-        ${getStatHtml('fireRate', 'Fire Rate', 'Increases the attack speed of your Primary Weapon.', v => Math.round(v) + '%')}
-        ${getStatHtml('critChance', 'Crit Chance', 'Chance to deal double damage on hit.', v => v.toFixed(1) + '%')}
-        ${getStatHtml('maxHp', 'Max HP', 'Maximum Hull Integrity. If it reaches 0, you explode.')}
-        ${getStatHtml('armorRating', 'Armor Rating', 'Increases Damage Reduction against incoming attacks.')}
-        <div class="stat-row" onmouseover="showTooltip('Damage Reduction', 'Percentage of incoming hull damage mitigated.', '', event)" onmouseout="hideTooltip()">
-            <span>Damage Reduction</span><span class="stat-val">${(player.stats.damageReduction * 100).toFixed(1)}%</span>
-        </div>
-        ${getStatHtml('maxShields', 'Shields', 'Energy barrier that absorbs damage before Hull.')}
-        ${getStatHtml('shieldRegen', 'Shield Regen', 'Amount of Shield recovered per second.', v => v + '/s')}
-        ${getStatHtml('maxEnergy', 'Energy', 'Maximum Reactor Energy for using skills.')}
-        ${getStatHtml('energyRegen', 'Energy Regen', 'Amount of Energy recovered per second.', v => Number(v).toFixed(1) + '/s')}
-        ${getStatHtml('maxSpeed', 'Max Speed', 'Top speed of your spacecraft.')}
-        ${getStatHtml('acceleration', 'Acceleration', 'How fast your ship reaches top speed (Thrust).')}
+        ${getStatHtml('damage', 'Damage', 'Base damage for your weapons and abilities.', [], v => v.min + '-' + v.max)}
+        ${getStatHtml('fireRate', 'Fire Rate', 'Increases the attack speed of your Primary Weapon.', frExtras, v => Math.round(v) + '%')}
+        ${getStatHtml('critChance', 'Crit Chance', 'Chance to deal double damage on hit.', critExtras, v => v.toFixed(1) + '%')}
+        ${getStatHtml('critDamage', 'Crit Damage', 'Multiplier applied to damage on a critical hit.', [], v => Math.round(v) + '%')}
+        ${getStatHtml('dummyCollision', 'Collision Damage', 'Damage multiplier dealt to enemies when ramming them.', collExtras, () => (collMult * 100).toFixed(1) + '%')}
+        ${getStatHtml('maxHp', 'Max HP', 'Maximum Hull Integrity. If it reaches 0, you explode.', hpExtras)}
+        ${getStatHtml('damageReduction', 'Damage Reduction', 'Percentage of incoming hull damage mitigated.', drExtras, v => (v * 100).toFixed(1) + '%')}
+        ${getStatHtml('maxShields', 'Shields', 'Energy barrier that absorbs damage before Hull.', shieldExtras)}
+        ${getStatHtml('shieldRegen', 'Shield Regen', 'Amount of Shield recovered per second.', srExtras, v => v + '/s')}
+        ${getStatHtml('maxEnergy', 'Energy', 'Maximum Reactor Energy for using skills.', enExtras)}
+        ${getStatHtml('energyRegen', 'Energy Regen', 'Amount of Energy recovered per second.', enRegenExtras, v => Number(v).toFixed(1) + '/s')}
+        ${getStatHtml('maxSpeed', 'Max Speed', 'Top speed of your spacecraft.', speedExtras)}
+        ${getStatHtml('acceleration', 'Acceleration', 'How fast your ship reaches top speed (Thrust).', [])}
     `;
 }
 
@@ -439,6 +607,37 @@ function unequipItem(slotType) {
     }
 }
 
+function scrapAllByTier(tier) {
+    let scrappedAny = false;
+    for (let i = 0; i < INVENTORY_SIZE; i++) {
+        let item = inventory[i];
+        if (item && SLOT_TYPES.includes(item.type) && item.tier === tier) {
+            inventory[i] = null;
+            let yieldCount = 1;
+            if (item.upgraded && Math.random() < 0.20) {
+                yieldCount = 2;
+            }
+            let yieldItem = {
+                id: Math.random().toString(36).substr(2, 9),
+                name: `${TIERS[tier].name} Core`,
+                type: 'Upgrade Material',
+                tier: tier,
+                stackable: true,
+                count: yieldCount,
+                desc: `Combine 3 to upgrade a ${TIERS[tier].name} item.`
+            };
+            pickupItem(yieldItem);
+            scrappedAny = true;
+        }
+    }
+    if (scrappedAny) {
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/impactMetal_004.ogg');
+        renderInventory();
+        updateUI();
+        hideTooltip();
+    }
+}
+
 function dropItem(index) {
     let item = inventory[index];
     if(item) {
@@ -492,6 +691,7 @@ function showTooltip(title, desc, statsHtml, e) {
 function showItemTooltip(item, e) {
     document.getElementById('tt-title').innerText = item.name;
     document.getElementById('tt-title').className = `tt-title tier-${item.tier}`;
+    document.getElementById('tt-title').style.color = item.type === 'Fuel' ? '#ffff00' : '';
     document.getElementById('tt-type').innerText = `iLvl ${item.itemLevel || 1} • ${item.type}`;
     document.getElementById('tt-desc').innerHTML = item.desc;
     
@@ -514,8 +714,8 @@ function showItemTooltip(item, e) {
                 else if (delta < 0) deltaStr = ` <span style="color:#f00">(${delta})</span>`;
             }
 
-            let str = item.statLines.find(l => l.includes(isObj ? `${val.min}-${val.max}` : val) && !l.startsWith('[PERK]'));
-            if (!str) str = isObj ? `+${val.min}-${val.max} ${stat}` : `+${val} ${stat}`;
+            let idx = findStatLineIndex(item.statLines, stat);
+            let str = idx !== -1 ? item.statLines[idx] : (isObj ? `+${val.min}-${val.max} ${stat}` : `+${val} ${stat}`);
             str += deltaStr;
             statsHtml.push(str);
         }
@@ -526,8 +726,8 @@ function showItemTooltip(item, e) {
             if (!item.stats || item.stats[stat] === undefined) {
                 let eqVal = eqItem.stats[stat];
                 let isObj = typeof eqVal === 'object';
-                let eqStr = eqItem.statLines?.find(l => l.includes(isObj ? `${eqVal.min}-${eqVal.max}` : eqVal) && !l.startsWith('[PERK]'));
-                if (!eqStr) eqStr = isObj ? `+${eqVal.min}-${eqVal.max} ${stat}` : `+${eqVal} ${stat}`;
+                let idx = findStatLineIndex(eqItem.statLines, stat);
+                let eqStr = idx !== -1 ? eqItem.statLines[idx] : (isObj ? `+${eqVal.min}-${eqVal.max} ${stat}` : `+${eqVal} ${stat}`);
                 
                 let lostStr = eqStr.replace(/^\+/, '-');
                 statsHtml.push(`<span style="color:rgba(255, 0, 0, 0.5); font-style:italic;">${lostStr}</span>`);
@@ -566,6 +766,11 @@ function showEquipTooltip(slot, e) {
     if(item) showItemTooltip(item, e);
 }
 function showSkillTooltip(id, e) {
+    if (id === 5) {
+        let amount = (equipment['Engine'] && equipment['Engine'].upgradedPerk) ? 30 : 20;
+        showTooltip('Consume Fuel Cell', `Instantly restores <span style="color:#0f0">${amount}</span> Fuel.<br>Requires Fuel Cells in your inventory.`, `Cost: 1 Fuel Cell<br>Cooldown: None`, e);
+        return;
+    }
     let skill = player.skills[id-1];
     let dmgStr = `${player.stats.damage.min}-${player.stats.damage.max}`;
     let dmgEmpStr = `${Math.floor(player.stats.damage.min * 0.75)}-${Math.floor(player.stats.damage.max * 0.75)}`;
@@ -574,16 +779,17 @@ function showSkillTooltip(id, e) {
 
     let hasTriple = (equipment['Primary Weapon'] && equipment['Primary Weapon'].perk === 'Triple Shot');
     let isTripleUpgraded = hasTriple && equipment['Primary Weapon'].upgradedPerk;
+    let primaryName = equipment['Primary Weapon'] ? equipment['Primary Weapon'].name : '';
     let pbDesc = '';
 
     if (isTripleUpgraded) {
         let tickRate = 0.25 / (player.stats.fireRate / 100);
         pbDesc = `Fires a continuous energy beam dealing <span style="color:#0f0">${dmgStr}</span> damage every ${tickRate.toFixed(2)}s to the main target, and chaining to nearby enemies.<br>Range: 1200 units`;
-        pbDesc += `<br><span style="color:#ff00ff">[UPGRADED PERK] Whip Beam Active</span>`;
+        pbDesc += `<br><span style="color:#ff00ff">[UPGRADED PERK] ${primaryName} Whip Beam</span>`;
     } else {
         let projCount = hasTriple ? 3 : 1;
         pbDesc = `Fires ${projCount} projectile${projCount > 1 ? 's' : ''} dealing <span style="color:#0f0">${dmgStr}</span> damage.<br>Range: 1200 units`;
-        if (hasTriple) pbDesc += `<br><span style="color:#f82">[PERK] Triple Shot Active</span>`;
+        if (hasTriple) pbDesc += `<br><span style="color:#f82">[PERK] ${primaryName} Triple Shot</span>`;
     }
 
     let descs = [
