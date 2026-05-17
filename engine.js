@@ -1,4 +1,4 @@
-import * as PIXI from 'https://esm.sh/pixi.js@7';
+import * as PIXI from 'pixi.js';
 window.PIXI = PIXI;
 
 /** ==========================================
