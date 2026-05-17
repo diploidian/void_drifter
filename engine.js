@@ -1,4 +1,4 @@
-import * as PIXI from 'https://github.com/diploidian/void_drifter/blob/WebGL/node_modules/pixi.js/dist/pixi.mjs';
+import * as PIXI from 'https://esm.sh/pixi.js@7';
 window.PIXI = PIXI;
 
 /** ==========================================
