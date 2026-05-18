@@ -243,7 +243,7 @@ function useSkill(index) {
     } 
     else if(index === 1) { // EMP
         playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/emp_blast.ogg');
-        entities.push(new EmpBlast(player.x, player.y, 600, getDamage(player) * 0.75, varColor('--shield')));
+        entities.push(new EmpBlast(player.x, player.y, 600, getDamage(player) * 1.25, varColor('--shield')));
     }
     else if(index === 2) { // Warp Dash
         playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/doorOpen_002.ogg');
