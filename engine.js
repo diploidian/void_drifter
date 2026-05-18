@@ -457,7 +457,7 @@ function update(dt) {
 
     // --- Thruster Audio Loop ---
     if (!GAME.thrusterAudio) {
-        GAME.thrusterAudio = new Audio('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/thruster.ogg');
+        GAME.thrusterAudio = new Audio('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/thruster.ogg');
         GAME.thrusterAudio.loop = true;
         GAME.thrusterAudio.volume = 0;
         GAME.thrusterAudio.preservesPitch = false;
