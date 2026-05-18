@@ -120,10 +120,10 @@ const player = {
     augments: {},
     timers: { dodge: 0, shieldRegen: 0, repairis: 0, immunity: 0, mycelialDebuff: 0, dashActive: 0, inMycelialCloud: 0 },
     skills: [
-        { id: 1, name: 'Pulse Blaster', cost: 2, cd: 0, maxCd: 0.25, type: 'projectile' },
-        { id: 2, name: 'EMP Blast', cost: 20, cd: 0, maxCd: 5.0, type: 'aoe' },
-        { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 3.0, type: 'dash', isFuel: true },
-        { id: 4, name: 'Black Hole', cost: 40, cd: 0, maxCd: 10.0, type: 'special' }
+        { id: 1, name: 'Pulse Blaster', cost: 0, cd: 0, maxCd: 0.30, type: 'projectile' },
+        { id: 2, name: 'EMP Blast', cost: 20, cd: 0, maxCd: 10.0, type: 'aoe' },
+        { id: 3, name: 'Warp Dash', cost: 15, cd: 0, maxCd: 5.0, type: 'dash', isFuel: true },
+        { id: 4, name: 'Black Hole', cost: 40, cd: 0, maxCd: 20.0, type: 'special' }
     ],
     
     gainXp(amount) {
@@ -141,10 +141,6 @@ const player = {
             BASE_STATS.maxHp += 10;
             BASE_STATS.damage.min += 1;
             BASE_STATS.damage.max += 2;
-            
-            // Heal 25% on level up and reset CD
-            this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + this.stats.maxHp * 0.1);
-            for(let s of this.skills) s.cd = 0;
             
             createFloatingText("LEVEL UP!", this.x, this.y - 30, '#00ff66', 2.5, false, false);
             if (this.level >= 5 && !GAME.bossSpawned) {
@@ -208,7 +204,7 @@ const player = {
         this.stats.shields = Math.min(this.stats.maxShields, this.stats.maxShields * oldShieldRatio);
         this.stats.energy = Math.min(this.stats.maxEnergy, this.stats.maxEnergy * oldEnRatio);
         
-        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.025); //pulse blaster base cost.
+        this.skills[0].cost = Math.floor(this.stats.maxEnergy * 0.02); //pulse blaster base cost.
         this.skills[1].cost = Math.floor(this.stats.maxEnergy * 0.20);
         this.skills[3].cost = Math.floor(this.stats.maxEnergy * 0.40);
         // Base 0.3s cooldown, reduced by the fire rate bonus percentage

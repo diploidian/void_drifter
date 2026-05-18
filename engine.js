@@ -240,13 +240,31 @@ function useSkill(index) {
         }
     } 
     else if(index === 1) { // EMP
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/spaceEngine_002.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/emp_blast.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
-        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
+        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 350));
+        
+        for(let i=projectiles.length-1; i>=0; i--) {
+            let p = projectiles[i];
+            if (!p.isPlayer && MathUtils.distance(player.x, player.y, p.x, p.y) < 270) {
+                createParticles(p.x, p.y, 0, 5, p.color);
+                if (p.pixiObj) {
+                    p.pixiObj.destroy();
+                    p.pixiObj = null;
+                }
+                projectiles.splice(i, 1);
+            }
+        }
+        
         for(let e of entities) {
             if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
                 e.takeDamage(getDamage(player) * 0.75, player, varColor('--shield'));
-                e.stunTimer = 3.0;
+                
+                let kbAngle = MathUtils.angle(player.x, player.y, e.x, e.y);
+                e.empKnockbackVx = Math.cos(kbAngle) * 1000;
+                e.empKnockbackVy = Math.sin(kbAngle) * 1000;
+                e.empKnockbackTimer = 0.3; // 1000 speed for 0.3s = 300 units exact
+                e.empSlowTimer = 3.0;
             }
         }
     }
@@ -462,7 +480,7 @@ function update(dt) {
 
     // --- Thruster Audio Loop ---
     if (!GAME.thrusterAudio) {
-        GAME.thrusterAudio = new Audio('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/WebGL/sounds/thruster.ogg');
+        GAME.thrusterAudio = new Audio('sounds/thruster.ogg');
         GAME.thrusterAudio.loop = true;
         GAME.thrusterAudio.volume = 0;
         GAME.thrusterAudio.preservesPitch = false;
@@ -507,10 +525,7 @@ function update(dt) {
     // --- Entity Updates ---
     for(let i=entities.length-1; i>=0; i--) {
         let e = entities[i];
-        if(e.dead) {
-            entities.splice(i, 1);
-            continue;
-        }
+        let preX = e.x; let preY = e.y;
         
         if (e instanceof Enemy || e instanceof BrutalistMonolith || e instanceof FungalNode) {
             if (e.ramCooldown === undefined) e.ramCooldown = 0;
@@ -560,8 +575,21 @@ function update(dt) {
 
         if (e.dead) {
             entities.splice(i, 1);
-        } else if(e.update(dt)) {
-            entities.splice(i, 1);
+        } else {
+            let remove = e.update(dt);
+            
+            if (e instanceof Enemy && !remove && !e.dead) {
+                if (e.empKnockbackTimer > 0) {
+                    e.empKnockbackTimer -= dt;
+                    e.x = preX + (e.empKnockbackVx * dt);
+                    e.y = preY + (e.empKnockbackVy * dt);
+                } else if (e.empSlowTimer > 0) {
+                    e.empSlowTimer -= dt;
+                    e.x = preX + (e.x - preX) * 0.1; // Only travel 10% of intended delta 
+                    e.y = preY + (e.y - preY) * 0.1;
+                }
+            }
+            if (remove) entities.splice(i, 1);
         }
     }
     for(let i=projectiles.length-1; i>=0; i--) {

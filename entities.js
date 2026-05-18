@@ -171,6 +171,11 @@ class Enemy {
         this.inMeleeRange = false;
         this.windupCooldown = 0;
         
+        this.empKnockbackTimer = 0;
+        this.empKnockbackVx = 0;
+        this.empKnockbackVy = 0;
+        this.empSlowTimer = 0;
+        
         this.flashTimer = 0;
         this.baseTint = this.type === 'chaser' ? 0xff0055 : (this.type === 'boss' ? 0xff4400 : 0x00ffcc);
         
@@ -374,7 +379,7 @@ class Enemy {
                         else if (this.attackCombo === 3) {
                             let t = (Math.sin(Date.now() / 100) + 1) / 2;
                             let g = Math.floor(128 + 127 * t);
-                            this.comboOverlay.tint = PIXI.utils.rgb2hex([1.0, g/255, 0]);
+                            this.comboOverlay.tint = (255 << 16) + (g << 8) + 0;
                             this.comboOverlay.alpha = 0.7;
                         }
                     } else {
@@ -385,8 +390,8 @@ class Enemy {
 
             if (this.flashTimer > 0) {
                 this.body.tint = 0xffffff;
-            } else if (this.stunTimer > 0) {
-                this.body.tint = 0xffff00;
+            } else if (this.stunTimer > 0 || this.empSlowTimer > 0) {
+                this.body.tint = 0x00d2ff; // Bright electric blue while EMP slowed
             } else {
                 this.body.tint = this.baseTint;
             }
@@ -2296,6 +2301,222 @@ function createFloatingText(text, x, y, color, life = 1.0, isLoot = false, isDam
 
 function spawnDrop(x, y, forceResource = false, item = null) {
     drops.push(new Drop(x, y, forceResource, item));
+}
+
+class EmpBlast {
+    constructor(x, y, radius, damage, color) {
+        let maxRadius = radius; // TWEAK: blast radius
+        let displacementPower = 100; // TWEAK: displacement power
+        let waveExpansionSpeed = 0.5; // TWEAK: wave expansion speed
+        let showVectors = false; // TWEAK: show vectors
+
+        this.x = x; this.y = y; this.z = 0;
+        this.maxRadius = maxRadius;
+        this.damage = damage;
+        this.color = color;
+        this.life = waveExpansionSpeed;
+        this.maxLife = waveExpansionSpeed;
+        this.hitEntities = new Set();
+        this.dead = false;
+        
+        // Ripple displacement effect logic
+        this.rippleLife = waveExpansionSpeed;
+        this.maxRippleLife = waveExpansionSpeed;
+        this.displacementPower = displacementPower;
+
+        this.graphics = new PIXI.Graphics();
+        
+        this.displacementSprite = new PIXI.Sprite(this.getVectorTexture(showVectors));
+        this.displacementSprite.anchor.set(0.5);
+        this.displacementSprite.scale.set(0.1);
+        
+        this.displacementFilter = new PIXI.DisplacementFilter(this.displacementSprite, displacementPower);
+        
+        GAME.layers.game.addChild(this.graphics);
+        GAME.layers.game.addChild(this.displacementSprite);
+        
+        let currentFilters = GAME.layers.game.filters || [];
+        currentFilters.push(this.displacementFilter);
+        GAME.layers.game.filters = currentFilters;
+    }
+
+    getVectorTexture(showVectors) {
+        if (GAME.textures.vectorRipple) return GAME.textures.vectorRipple;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(256, 256);
+        const data = imgData.data;
+
+        for (let y = 0; y < 256; y++) {
+            for (let x = 0; x < 256; x++) {
+                let dx = x - 128;
+                let dy = y - 128;
+                let dist = Math.hypot(dx, dy);
+                let idx = (y * 256 + x) * 4;
+
+                if (dist > 0 && dist <= 128) {
+                    let nx = dx / dist;
+                    let ny = dy / dist;
+                    
+                    // A pulse ring Profile: peaks at 64, tails off to 128 and 0.
+                    let strength = 0;
+                    if (dist >= 64 && dist <= 128) {
+                        let normalized = (dist - 64) / 64; 
+                        strength = Math.sin(normalized * Math.PI); 
+                    }
+
+                    // Map physical vector direction onto Red and Green color channels
+                    data[idx] = Math.max(0, Math.min(255, 128 + nx * strength * 127));
+                    data[idx+1] = Math.max(0, Math.min(255, 128 + ny * strength * 127));
+                    data[idx+2] = 128;
+                    data[idx+3] = 255;
+                } else {
+                    data[idx] = 128;
+                    data[idx+1] = 128;
+                    data[idx+2] = 128;
+                    data[idx+3] = 255;
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        if (showVectors) {
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+            ctx.beginPath();
+            for (let y = 16; y < 256; y += 32) {
+                for (let x = 16; x < 256; x += 32) {
+                    let dx = x - 128;
+                    let dy = y - 128;
+                    let dist = Math.hypot(dx, dy);
+                    if (dist > 0 && dist < 128) {
+                        let strength = 0;
+                        if (dist >= 64 && dist <= 128) {
+                            strength = Math.sin(((dist - 64) / 64) * Math.PI); 
+                        }
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x + (dx/dist) * strength * 15, y + (dy/dist) * strength * 15);
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+
+        GAME.textures.vectorRipple = PIXI.Texture.from(canvas);
+        return GAME.textures.vectorRipple;
+    }
+
+    update(dt) {
+        if(this.dead) return true;
+        this.life -= dt;
+        this.rippleLife -= dt;
+
+        let progress = 1.0 - Math.max(0, this.life / this.maxLife);
+        let currentRadius = this.maxRadius * progress;
+
+        for(let e of entities) {
+            if (e instanceof Enemy && !e.dead && !this.hitEntities.has(e) && e.z <= 0) {
+                if (MathUtils.distance(this.x, this.y, e.x, e.y) <= currentRadius + e.radius) {
+                    this.hitEntities.add(e);
+                    e.takeDamage(this.damage, player, this.color);
+                    
+                    let kbAngle = MathUtils.angle(this.x, this.y, e.x, e.y);
+                    e.empKnockbackVx = Math.cos(kbAngle) * 1000;
+                    e.empKnockbackVy = Math.sin(kbAngle) * 1000;
+                    e.empKnockbackTimer = 0.3; 
+                    e.empSlowTimer = 3.0;
+                }
+            }
+        }
+        
+        for(let i=projectiles.length-1; i>=0; i--) {
+            let p = projectiles[i];
+            if (!p.isPlayer && !this.hitEntities.has(p)) {
+                if (MathUtils.distance(this.x, this.y, p.x, p.y) <= currentRadius) {
+                    this.hitEntities.add(p);
+                    createParticles(p.x, p.y, 0, 5, p.color);
+                    if (p.pixiObj) {
+                        p.pixiObj.destroy();
+                        p.pixiObj = null;
+                    }
+                    projectiles.splice(i, 1);
+                }
+            }
+        }
+
+        if(this.life <= 0 && this.rippleLife <= 0) {
+            this.dead = true;
+            if(this.graphics) {
+                this.graphics.destroy();
+                this.graphics = null;
+            }
+            if(this.displacementSprite) {
+                this.displacementSprite.destroy();
+                this.displacementSprite = null;
+            }
+            if(GAME.layers.game.filters) {
+                GAME.layers.game.filters = GAME.layers.game.filters.filter(f => f !== this.displacementFilter);
+                if (GAME.layers.game.filters.length === 0) {
+                    GAME.layers.game.filters = null;
+                }
+            }
+            if(this.displacementFilter) {
+                this.displacementFilter.destroy();
+                this.displacementFilter = null;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    draw() {
+        if(!this.graphics) return;
+        this.graphics.clear();
+        let p = project(this.x, this.y, this.z);
+        if(!p) {
+            this.graphics.visible = false;
+            if(this.displacementSprite) this.displacementSprite.visible = false;
+            return;
+        }
+        
+        let s = getScale(this.z);
+        
+        if (this.life > 0) {
+            this.graphics.visible = true;
+            let progress = 1.0 - (this.life / this.maxLife);
+            let currentRadius = this.maxRadius * progress;
+            let alpha = 1.0 - Math.pow(progress, 2);
+            
+            let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
+            this.graphics.lineStyle(4 * s, c, alpha);
+            this.graphics.drawCircle(p.x, p.y, currentRadius * s);
+            
+            this.graphics.beginFill(c, alpha * 0.2);
+            this.graphics.drawCircle(p.x, p.y, currentRadius * s);
+            this.graphics.endFill();
+            this.graphics.zIndex = this.z;
+        } else {
+            this.graphics.visible = false;
+        }
+        
+        if (this.displacementSprite) {
+            if (this.rippleLife > 0) {
+                this.displacementSprite.visible = true;
+                let rippleProgress = 1.0 - (this.rippleLife / this.maxRippleLife);
+                let currentRippleRadius = this.maxRadius * rippleProgress;
+                
+                // Texture is 256x256, so radius is 128
+                this.displacementSprite.scale.set((currentRippleRadius / 128) * s);
+                this.displacementSprite.position.set(p.x, p.y);
+                
+                // Fade out displacement over time
+                this.displacementFilter.scale.set((1.0 - Math.pow(rippleProgress, 2)) * this.displacementPower * s);
+            } else {
+                this.displacementSprite.visible = false;
+            }
+        }
+    }
 }
 
 function spawnBoss() {

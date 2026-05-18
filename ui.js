@@ -794,7 +794,7 @@ function showSkillTooltip(id, e) {
 
     let descs = [
         pbDesc,
-        `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmgEmpStr}</span> damage and stunning nearby enemies.<br>Radius: 270 units`,
+        `Releases an electromagnetic pulse, dealing <span style="color:#0f0">${dmgEmpStr}</span> damage, knocking enemies back and slowing their movement to 10% for 3 seconds. Obliterates nearby enemy projectiles.<br>Radius: 270 units`,
         `Engages warp thrusters to dash toward the cursor, leaving a plasma trail dealing <span style="color:#0f0">${dmgWarpStr}</span> damage per second.<br>Cone: 30 degrees`,
         `Launches a singularity core that collapses into a black hole, sucking in enemies before exploding for <span style="color:#0f0">${dmgSingExpStr}</span> damage.`
     ];
