@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Void Drifter: ARPG</title>
+  <script type="module" crossorigin src="/assets/index-Bmsi2ujI.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CeqhJuTn.css">
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="pixi-container" style="position: absolute; top: 0; left: 0; z-index: 1;"></div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="controls-hint">
+            [WASD] Move & Accelerate<br>
+            [SPACE] Dodge / Thruster Burst<br>
+            [MOUSE] Aim & Tooltips<br>
+            [MOUSEWHEEL] Zoom In/Out<br>
+            [1-4] Active Skills<br>
+            [I/C] Inventory / Ship Stats<br>
+            <i>Avoid high-speed asteroid collisions!</i>
+        </div>
+
+        <div id="xp-bar-container" class="interactive">
+            <div id="xp-fill"></div>
+            <div id="xp-text">0 / 100</div>
+        </div>
+        <div id="lvl-text">LEVEL 1</div>
+
+        <div id="kill-counter">
+            kills last level: <span class="kill-value">0</span><br>
+            kills this level: <span class="kill-value">0</span><br>
+            total kills: <span class="kill-value">0</span>
+        </div>
+
+        <div id="minimap-container" class="interactive">
+            <canvas id="minimap"></canvas>
+        </div>
+        <div id="speed-indicator" style="position: absolute; top: 230px; right: 20px; width: 200px; text-align: center; font-family: 'Orbitron'; color: var(--accent); text-shadow: 0 0 5px var(--accent); font-weight: bold; pointer-events: none; z-index: 10;">SPEED: 0 U/S</div>
+
+        <div id="hud-bottom" class="interactive">
+            <div id="augments-hud" style="display:flex; justify-content:space-between; width:100%; margin-bottom: 2px; padding: 0 5px;"></div>
+            <div class="resource-bar-container">
+                <div class="bar-wrap" onmouseover="showTooltip('Hull Integrity', 'Taking damage reduces Hull. At 0, you explode.', '', event)" onmouseout="hideTooltip()">
+                    <div id="hp-fill" class="bar-fill"></div>
+                    <div id="hp-text" class="bar-text">HP: 100/100</div>
+                </div>
+                <div class="bar-wrap" onmouseover="showTooltip('Energy Shields', 'Regenerates over time. Absorbs damage before Hull.', '', event)" onmouseout="hideTooltip()">
+                    <div id="shield-fill" class="bar-fill"></div>
+                    <div id="shield-text" class="bar-text">SH: 50/50</div>
+                </div>
+            </div>
+            <div class="resource-bar-container">
+                <div class="bar-wrap" onmouseover="showTooltip('Reactor Energy', 'Required for active skills. Regenerates based on Reactor.', '', event)" onmouseout="hideTooltip()">
+                    <div id="energy-fill" class="bar-fill"></div>
+                    <div id="energy-text" class="bar-text">EN: 100/100</div>
+                </div>
+                <div class="bar-wrap" onmouseover="showTooltip('Thruster Fuel', 'Drains when moving. Replenish from asteroids and enemies.', '', event)" onmouseout="hideTooltip()">
+                    <div id="fuel-fill" class="bar-fill"></div>
+                    <div id="fuel-text" class="bar-text">FUEL: 100%</div>
+                </div>
+            </div>
+            
+            <div class="skills-container">
+                <div class="skill-slot" id="skill-1" onmouseover="showSkillTooltip(1, event)" onmouseout="hideTooltip()">
+                    <div class="skill-key">1</div> PB
+                    <div class="cooldown-overlay" id="cd-1"></div>
+                </div>
+                <div class="skill-slot" id="skill-2" onmouseover="showSkillTooltip(2, event)" onmouseout="hideTooltip()">
+                    <div class="skill-key">2</div> EMP
+                    <div class="cooldown-overlay" id="cd-2"></div>
+                </div>
+                <div class="skill-slot" id="skill-3" onmouseover="showSkillTooltip(3, event)" onmouseout="hideTooltip()">
+                    <div class="skill-key">3</div> WD
+                    <div class="cooldown-overlay" id="cd-3"></div>
+                </div>
+                <div class="skill-slot" id="skill-4" onmouseover="showSkillTooltip(4, event)" onmouseout="hideTooltip()">
+                    <div class="skill-key">4</div> SG
+                    <div class="cooldown-overlay" id="cd-4"></div>
+                </div>
+                <div class="skill-slot" id="skill-5" onmouseover="showTooltip('Consume Fuel Cell', 'Replenish 12 Fuel.', 'Cost: 1 Fuel Cell', event)" onmouseout="hideTooltip()">
+                    <div class="skill-key">F</div> FL
+                    <div class="stack-count" id="fuel-cell-count" style="font-size: 12px; bottom: 2px; right: 4px;">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="char-sheet" class="interactive">
+            <div class="panel-section">
+                <h2>Equipment</h2>
+                <div class="equip-grid">
+                    <div class="slot" id="eq-Primary Weapon" onclick="unequipItem('Primary Weapon')" onmouseover="showEquipTooltip('Primary Weapon', event)" onmouseout="hideTooltip()">
+                        <div class="slot-name">Primary</div><div class="slot-content">Empty</div>
+                    </div>
+                    <div class="slot" id="eq-Secondary Weapon" onclick="unequipItem('Secondary Weapon')" onmouseover="showEquipTooltip('Secondary Weapon', event)" onmouseout="hideTooltip()">
+                        <div class="slot-name">Secondary</div><div class="slot-content">Empty</div>
+                    </div>
+                    <div class="slot" id="eq-Hull" onclick="unequipItem('Hull')" onmouseover="showEquipTooltip('Hull', event)" onmouseout="hideTooltip()">
+                        <div class="slot-name">Hull</div><div class="slot-content">Empty</div>
+                    </div>
+                    <div class="slot" id="eq-Shields" onclick="unequipItem('Shields')" onmouseover="showEquipTooltip('Shields', event)" onmouseout="hideTooltip()">
+                        <div class="slot-name">Shields</div><div class="slot-content">Empty</div>
+                    </div>
+                    <div class="slot" id="eq-Engine" onclick="unequipItem('Engine')" onmouseover="showEquipTooltip('Engine', event)" onmouseout="hideTooltip()">
+                        <div class="slot-name">Engine</div><div class="slot-content">Empty</div>
+                    </div>
+                    <div class="slot" id="eq-Reactor" onclick="unequipItem('Reactor')" onmouseover="showEquipTooltip('Reactor', event)" onmouseout="hideTooltip()">
+                        <div class="slot-name">Reactor</div><div class="slot-content">Empty</div>
+                    </div>
+                </div>
+                
+                <h2>Ship Stats</h2>
+                <div class="stats-list" id="stats-list-container">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            <div class="panel-section">
+                <h2>Cargo Hold (Inventory)</h2>
+                <div style="font-size: 11px; color:#888; margin-bottom: 10px;">Left-click: Equip/Use | Right-click: Drop/Scrap</div>
+                <div class="inventory-grid" id="inventory-grid">
+                    <!-- 50 slots populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="upgrade-modal" class="interactive" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:var(--panel); border:2px solid var(--accent); padding:20px; border-radius:10px; z-index: 300; width: 350px; text-align: center; box-shadow: 0 0 30px rgba(0,210,255,0.4);">
+        <h2 id="upg-title" style="margin-bottom: 5px;">Upgrade Item</h2>
+        <div style="font-size: 12px; color: #ccc;">Select a modifier to buff by 3 Item Levels, or upgrade the Perk.</div>
+        <div id="upg-options" style="display:flex; flex-direction:column; gap:10px; margin-top:15px;"></div>
+        <button onclick="closeUpgradeModal()" style="margin-top:15px; width:100%; padding: 10px; background: #330000; color: white; border: 1px solid #ff3366; cursor: pointer; font-family: 'Orbitron'; border-radius: 4px;">Cancel</button>
+    </div>
+
+    <div id="augment-modal" class="interactive" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:400; flex-direction:column; justify-content:center; align-items:center;">
+        <h1 style="color: var(--accent); font-family: 'Orbitron'; margin-bottom: 30px; font-size: 40px; text-shadow: 0 0 20px var(--accent);">LEVEL UP AUGMENT</h1>
+        <div id="augment-options" style="display:flex; gap:20px;"></div>
+    </div>
+
+    <div id="hud-right" class="interactive">
+        <div id="hud-eq-Primary Weapon" class="hud-eq-slot">Primary</div>
+        <div id="hud-eq-Secondary Weapon" class="hud-eq-slot">Secondary</div>
+        <div id="hud-eq-Hull" class="hud-eq-slot">Hull</div>
+        <div id="hud-eq-Shields" class="hud-eq-slot">Shields</div>
+        <div id="hud-eq-Engine" class="hud-eq-slot">Engine</div>
+        <div id="hud-eq-Reactor" class="hud-eq-slot">Reactor</div>
+    </div>
+
+    <div id="tooltip-container">
+        <div id="tooltip" class="tooltip-box">
+            <div class="tt-title" id="tt-title">Title</div>
+            <div class="tt-type" id="tt-type">Type</div>
+            <div class="tt-desc" id="tt-desc">Description goes here</div>
+            <div class="tt-stats" id="tt-stats"></div>
+        </div>
+        <div id="tooltip-equipped" class="tooltip-box" style="display:none; opacity: 0.8;">
+            <div class="tt-title" id="tt-eq-title">Equipped Title</div>
+            <div class="tt-type" id="tt-eq-type">Type</div>
+            <div class="tt-desc" id="tt-eq-desc">Description goes here</div>
+            <div class="tt-stats" id="tt-eq-stats"></div>
+        </div>
+    </div>
+
+    <div id="game-over">
+        <h1>HULL BREACH DETECTED</h1>
+        <button onclick="location.reload()">REBOOT SYSTEM</button>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19"></script>
+    <script src="globals.js"></script>
+    <script src="loot.js"></script>
+    <script src="player.js"></script>
+    <script src="entities.js"></script>
+    <script src="ui.js"></script>
+    <script src="devTools.js"></script>
+</body>
+</html>

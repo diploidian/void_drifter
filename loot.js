@@ -21,7 +21,7 @@ const ITEM_TEMPLATES = {
 };
 
 function getFireRateBonus(rating, level) {
-    return Math.max(0, rating / (rating + 130 + level * 50));
+    return Math.max(0, rating / (rating + Math.sqrt(level) * 120));
 }
 
 function getArmorReduction(rating, level) {
@@ -30,6 +30,10 @@ function getArmorReduction(rating, level) {
 
 function getCritBonus(rating, level) {
     return Math.max(0, rating / (rating + 200 + level * 30)) * 100;
+}
+
+function getCollisionMultiplier(rating, level) {
+    return (rating / (rating + 300 + level * 20)) * 3.0; //collision multiplier tweaking
 }
 
 function generateLoot(type = null, tierLevel = -1) {
@@ -69,25 +73,23 @@ function generateLoot(type = null, tierLevel = -1) {
     let statLines = [];
     let lvlMult = 1 + (player.level - 1) * 0.15; // +15% item value per level
     
-    let availableStats = [...template.stats, 'fireRateRating'];
-    if (type === 'Primary Weapon' || type === 'Secondary Weapon') availableStats.push('damage', 'critRating');
-    else if (type === 'Hull') availableStats.push('maxHp', 'armorRating');
-    else if (type === 'Shields') availableStats.push('maxShields', 'shieldRegen');
-    else if (type === 'Engine') availableStats.push('maxSpeed', 'acceleration');
-    else if (type === 'Reactor') availableStats.push('maxEnergy', 'energyRegen');
-    
-    availableStats = [...new Set(availableStats)];
+    let coreStats = [...template.stats];
+    let genericStats = ['fireRateRating', 'critRating', 'critDamage', 'collisionDamage', 'energyOnKill'];
     
     let pickedStats = [];
     for (let i = 0; i < tier.mods; i++) {
-        if (availableStats.length === 0) break;
-        let idx = MathUtils.randInt(0, availableStats.length - 1);
-        pickedStats.push(availableStats.splice(idx, 1)[0]);
+        if (coreStats.length > 0) {
+            let idx = MathUtils.randInt(0, coreStats.length - 1);
+            pickedStats.push(coreStats.splice(idx, 1)[0]);
+        } else if (genericStats.length > 0) {
+            let idx = MathUtils.randInt(0, genericStats.length - 1);
+            pickedStats.push(genericStats.splice(idx, 1)[0]);
+        }
     }
 
     for (let stat of pickedStats) {
         let val = 0; let str = ''; let isObj = false;
-        if (stat === 'fireRateRating') { val = Math.floor(MathUtils.rand(10, 25) * tier.mult * lvlMult); str = `+${val} Fire Rate Rating`; }
+        if (stat === 'fireRateRating') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Fire Rate Rating`; }
         else if (stat === 'damage') { 
             let avgDmg = MathUtils.rand(10, 20) * tier.mult * lvlMult;
             let spread = Math.max(1, 6 - tierLevel) * 2; // Tighter spread for better tiers
@@ -95,15 +97,18 @@ function generateLoot(type = null, tierLevel = -1) {
             let max = Math.floor(avgDmg + spread/2);
             val = { min, max }; str = `+${min}-${max} Damage`; isObj = true;
         }
-        else if (stat === 'critRating') { val = Math.floor(MathUtils.rand(10, 25) * tier.mult * lvlMult); str = `+${val} Crit Rating`; }
-        else if (stat === 'maxHp') { val = Math.floor(MathUtils.rand(20, 50) * tier.mult * lvlMult); str = `+${val} Max HP`; }
-        else if (stat === 'armorRating') { val = Math.floor(MathUtils.rand(20, 30) * Math.pow(tier.mult, 2) * lvlMult); str = `+${val} Armor Rating`; }
-        else if (stat === 'maxShields') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult); str = `+${val} Max Shields`; }
-        else if (stat === 'shieldRegen') { val = Math.floor(MathUtils.rand(2, 8) * tier.mult * lvlMult); str = `+${val} Shield/sec`; }
-        else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult); str = `+${val} Max Speed`; }
+        else if (stat === 'critRating') { val = Math.floor(MathUtils.rand(5, 15) * tier.mult * lvlMult); str = `+${val} Crit Rating`; }
+        else if (stat === 'critDamage') { val = Math.floor(MathUtils.rand(10, 20) * tier.mult * lvlMult); str = `+${val}% Crit Damage`; }
+        else if (stat === 'collisionDamage') { val = Math.floor(MathUtils.rand(10, 20) * tier.mult * lvlMult); str = `+${val} Collision Damage`; }
+        else if (stat === 'energyOnKill') { val = parseFloat((MathUtils.rand(0.1, 0.5) * tier.mult * lvlMult).toFixed(2)); str = `+${val} Energy on Kill`; }
+        else if (stat === 'maxHp') { val = Math.floor(MathUtils.rand(20, 40) * tier.mult * lvlMult); str = `+${val} Max HP`; }
+        else if (stat === 'armorRating') { val = Math.floor(MathUtils.rand(15, 25) * Math.pow(tier.mult, 2) * lvlMult); str = `+${val} Armor Rating`; }
+        else if (stat === 'maxShields') { val = Math.floor(MathUtils.rand(8, 14) * tier.mult * lvlMult); str = `+${val} Max Shields`; }
+        else if (stat === 'shieldRegen') { val = Math.floor(MathUtils.rand(2, 4) * tier.mult * lvlMult); str = `+${val} Shield/sec`; }
+        else if (stat === 'maxSpeed') { val = Math.floor(MathUtils.rand(10, 20) * tier.mult); str = `+${val} Max Speed`; }
         else if (stat === 'acceleration') { val = Math.floor(MathUtils.rand(10, 30) * tier.mult * lvlMult); str = `+${val} Thrust`; }
-        else if (stat === 'maxEnergy') { val = Math.floor(MathUtils.rand(20, 60) * tier.mult * lvlMult); str = `+${val} Max Energy`; }
-        else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(1, 4) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
+        else if (stat === 'maxEnergy') { val = Math.floor(MathUtils.rand(10, 20) * tier.mult * lvlMult); str = `+${val} Max Energy`; }
+        else if (stat === 'energyRegen') { val = Math.floor(MathUtils.rand(2, 4) * tier.mult * lvlMult); str = `+${val} Energy/sec`; }
         
         if (isObj || val > 0) { stats[stat] = val; statLines.push(str); }
     }

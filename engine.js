@@ -1,3 +1,6 @@
+import * as PIXI from 'https://esm.sh/pixi.js@7.4.3';
+window.PIXI = PIXI;
+
 /** ==========================================
  * PROJECTION & RENDERING
  * ========================================== */
@@ -15,9 +18,13 @@ function project(x, y, z) {
     return { x: px, y: py };
 }
 
-function drawGrid(ctx) {
-    ctx.strokeStyle = 'rgba(26, 43, 76, 0.3)';
-    ctx.lineWidth = 1;
+window.getScale = getScale;
+window.project = project;
+
+function drawGrid() {
+    let g = GAME.graphics.grid;
+    g.clear();
+    g.lineStyle(1, 0x1a2b4c, 0.3);
     let gridSize = 200;
     
     // Determine visible world bounds
@@ -35,24 +42,118 @@ function drawGrid(ctx) {
     let hw = cw / 2;
     let hh = ch / 2;
 
-    ctx.beginPath();
     for(let x = startX; x < right; x += gridSize) {
         let px = (x - cx) * scale + hw;
-        ctx.moveTo(px, (top - cy) * scale + hh);
-        ctx.lineTo(px, (bottom - cy) * scale + hh);
+        g.moveTo(px, (top - cy) * scale + hh);
+        g.lineTo(px, (bottom - cy) * scale + hh);
     }
     for(let y = startY; y < bottom; y += gridSize) {
         let py = (y - cy) * scale + hh;
-        ctx.moveTo((left - cx) * scale + hw, py);
-        ctx.lineTo((right - cx) * scale + hw, py);
+        g.moveTo((left - cx) * scale + hw, py);
+        g.lineTo((right - cx) * scale + hw, py);
     }
-    ctx.stroke();
 }
 
 /** ==========================================
  * MAIN GAME LOOP & LOGIC
  * ========================================== */
-const RENDER_LIST = [];
+function initPixi() {
+    miniCanvas = document.getElementById('minimap');
+    if (miniCanvas) {
+        GAME.minimapApp = new PIXI.Application({
+            view: miniCanvas,
+            width: 200,
+            height: 200,
+            backgroundColor: 0x050508,
+            antialias: false
+        });
+        GAME.minimapGraphics = new PIXI.Graphics();
+        GAME.minimapApp.stage.addChild(GAME.minimapGraphics);
+    }
+    GAME.pixiApp = new PIXI.Application({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        backgroundColor: 0x050508, 
+        resizeTo: window,
+        antialias: true,
+        preference: 'webgl'
+    });
+    document.getElementById('pixi-container').appendChild(GAME.pixiApp.view);
+
+    GAME.layers.background = new PIXI.Container();
+    GAME.layers.game = new PIXI.Container();
+    GAME.layers.ui = new PIXI.Container();
+    
+    // Automate z-sorting natively within PixiJS for future phases!
+    GAME.layers.game.sortableChildren = true;
+
+    GAME.pixiApp.stage.addChild(GAME.layers.background);
+    GAME.pixiApp.stage.addChild(GAME.layers.game);
+    GAME.pixiApp.stage.addChild(GAME.layers.ui);
+
+    // Generate base Star Texture
+    const starGraphics = new PIXI.Graphics();
+    starGraphics.beginFill(0xFFFFFF);
+    starGraphics.drawCircle(0, 0, 10);
+    starGraphics.endFill();
+    GAME.textures.star = GAME.pixiApp.renderer.generateTexture(starGraphics);
+
+    // Generate soft Cloud Texture via 2D Canvas Fallback
+    const cloudCanvas = document.createElement('canvas');
+    cloudCanvas.width = 256; cloudCanvas.height = 256;
+    const cCtx = cloudCanvas.getContext('2d');
+    const grad = cCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    cCtx.fillStyle = grad; cCtx.fillRect(0,0,256,256);
+    GAME.textures.cloud = PIXI.Texture.from(cloudCanvas);
+
+    // Generate XpOrb
+    const xpG = new PIXI.Graphics();
+    xpG.beginFill(0x00ff66); xpG.drawCircle(0, 0, 4); xpG.endFill();
+    GAME.textures.xpOrb = GAME.pixiApp.renderer.generateTexture(xpG);
+
+    const xpBG = new PIXI.Graphics();
+    xpBG.lineStyle(1, 0xffffff); xpBG.beginFill(0xaaffcc); xpBG.drawCircle(0, 0, 5); xpBG.endFill();
+    GAME.textures.xpOrbBonus = GAME.pixiApp.renderer.generateTexture(xpBG);
+
+    const hpG = new PIXI.Graphics();
+    hpG.beginFill(0xff3366); hpG.drawCircle(0, 0, 6); hpG.endFill();
+    hpG.beginFill(0xffffff); hpG.drawRect(-1, -3, 2, 6); hpG.drawRect(-3, -1, 6, 2); hpG.endFill();
+    GAME.textures.hpOrb = GAME.pixiApp.renderer.generateTexture(hpG);
+
+    const specialFuelG = new PIXI.Graphics();
+    specialFuelG.beginFill(0xffff00); specialFuelG.drawCircle(0, 0, 10); specialFuelG.endFill();
+    specialFuelG.beginFill(0x000000); specialFuelG.drawRect(-2, -4, 4, 8); specialFuelG.endFill();
+    GAME.textures.specialFuel = GAME.pixiApp.renderer.generateTexture(specialFuelG);
+
+    // Setup Shared Dynamic & UI Graphics
+    GAME.graphics = { mycelial: new PIXI.Graphics(), grid: new PIXI.Graphics() };
+    GAME.layers.background.addChild(GAME.graphics.grid);
+    GAME.graphics.mycelial.zIndex = 0;
+
+    GAME.graphics.damageGlow = new PIXI.Graphics();
+    GAME.layers.ui.addChild(GAME.graphics.damageGlow);
+    
+    let icon = getIcon('BossSkull', '#ff0000');
+    GAME.graphics.bossIndicator = new PIXI.Sprite(PIXI.Texture.from(icon.img));
+    GAME.graphics.bossIndicator.anchor.set(0.5);
+    GAME.layers.ui.addChild(GAME.graphics.bossIndicator);
+    GAME.layers.game.addChild(GAME.graphics.mycelial);
+
+    // Setup Player Ship Pixi Object
+    player.pixiObj = new PIXI.Container();
+    player.rangeOverlays = new PIXI.Graphics();
+    player.body = new PIXI.Graphics();
+    player.shieldGraphics = new PIXI.Graphics();
+    
+    player.body.beginFill(0x111111);
+    player.body.lineStyle(2, 0xffffff); // White line to tint perfectly
+    player.body.moveTo(20, 0); player.body.lineTo(-15, 15); player.body.lineTo(-10, 0); player.body.lineTo(-15, -15); player.body.closePath();
+    player.body.endFill();
+    
+    player.pixiObj.addChild(player.rangeOverlays, player.body, player.shieldGraphics);
+    GAME.layers.game.addChild(player.pixiObj);
+}
 
 function updateMycelialNetwork() {
     mycelialLoops = [];
@@ -131,21 +232,39 @@ function useSkill(index) {
         } else if (hasTriple) {
             playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserLarge_001.ogg', 0.5, pitch);
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
-            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
-            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/8, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle - Math.PI/25, 600, getDamage(player), true, varColor('--accent'), player));
+            projectiles.push(new Projectile(player.x, player.y, angle + Math.PI/25, 600, getDamage(player), true, varColor('--accent'), player));
         } else {
             playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/laserSmall_004.ogg', 0.5, pitch);
             projectiles.push(new Projectile(player.x, player.y, angle, 600, getDamage(player), true, varColor('--accent'), player));
         }
     } 
     else if(index === 1) { // EMP
-        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/spaceEngine_002.ogg');
+        playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/emp_blast.ogg');
         createParticles(player.x, player.y, 0, 70, varColor('--shield'));
-        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 270));
+        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 350));
+        
+        for(let i=projectiles.length-1; i>=0; i--) {
+            let p = projectiles[i];
+            if (!p.isPlayer && MathUtils.distance(player.x, player.y, p.x, p.y) < 270) {
+                createParticles(p.x, p.y, 0, 5, p.color);
+                if (p.pixiObj) {
+                    p.pixiObj.destroy();
+                    p.pixiObj = null;
+                }
+                projectiles.splice(i, 1);
+            }
+        }
+        
         for(let e of entities) {
             if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
                 e.takeDamage(getDamage(player) * 0.75, player, varColor('--shield'));
-                e.stunTimer = 3.0;
+                
+                let kbAngle = MathUtils.angle(player.x, player.y, e.x, e.y);
+                e.empKnockbackVx = Math.cos(kbAngle) * 1000;
+                e.empKnockbackVy = Math.sin(kbAngle) * 1000;
+                e.empKnockbackTimer = 0.3; // 1000 speed for 0.3s = 300 units exact
+                e.empSlowTimer = 3.0;
             }
         }
     }
@@ -200,18 +319,24 @@ function update(dt) {
         ay /= len;
     }
 
-    let currentMaxSpeed = player.stats.maxSpeed;
-    if (player.timers.dashActive > 0) {
-        currentMaxSpeed *= 2;
+    let isThrustingInput = (ax !== 0 || ay !== 0);
+
+    if (GAME.keys[' '] && isThrustingInput) {
+        player.timers.boostCharge = Math.min(2.0, (player.timers.boostCharge || 0) + dt);
+    } else {
+        player.timers.boostCharge = Math.max(0, (player.timers.boostCharge || 0) - dt * 4.0); // fast decay
     }
+    
+    let boostMult = 1.0 + 0.5 * ((player.timers.boostCharge || 0) / 2.0);
+    let currentMaxSpeed = player.stats.maxSpeed * boostMult;
 
     if(player.timers.mycelialDebuff > 0) {
         player.timers.mycelialDebuff -= dt;
         currentMaxSpeed *= 0.7; // 30% Slow
         
-        // Drain 10% energy over 2 seconds => 5% per second
-        player.stats.energy -= (player.stats.maxEnergy * 0.05) * dt;
-        if(player.stats.energy < 0) player.stats.energy = 0;
+        // Drain shields 5% per second
+        player.stats.shields -= (player.stats.maxShields * 0.05) * dt;
+        if(player.stats.shields < 0) player.stats.maxShields = 0;
         
         if(Math.random() < dt * 10) {
             createParticles(player.x + MathUtils.rand(-15, 15), player.y + MathUtils.rand(-15, 15), 0, 1, '#99ff33', 0.5);
@@ -231,8 +356,9 @@ function update(dt) {
 
     let isThrusting = (ax !== 0 || ay !== 0);
     if (isThrusting) {
-        player.vx += ax * player.stats.acceleration * dt;
-        player.vy += ay * player.stats.acceleration * dt;
+        let accelMult = GAME.keys[' '] ? 1.5 : 1.0;
+        player.vx += ax * player.stats.acceleration * accelMult * dt;
+        player.vy += ay * player.stats.acceleration * accelMult * dt;
     } else {
         player.vx *= player.stats.friction;
         player.vy *= player.stats.friction;
@@ -244,25 +370,14 @@ function update(dt) {
         player.vx *= ratio; player.vy *= ratio;
     }
 
-    // Dodge
-    if(GAME.keys[' '] && player.timers.dodge <= 0) {
-        if(ax !== 0 || ay !== 0) {
+    // Engine Boost Effects
+    if(GAME.keys[' '] && isThrustingInput) {
+        if(Math.random() < dt * 20) {
             let moveAngle = Math.atan2(ay, ax);
-            player.timers.dashActive = 0.4;
-            player.timers.dodge = 2.0; // cooldown
-            player.timers.immunity = 1.0;
-            
-            let dashSpeed = player.stats.maxSpeed * 2;
-            if (player.timers.mycelialDebuff > 0) dashSpeed *= 0.7;
-            
-            player.vx = Math.cos(moveAngle) * dashSpeed;
-            player.vy = Math.sin(moveAngle) * dashSpeed;
-            createParticles(player.x, player.y, 0, 20, varColor('--accent'));
+            createParticles(player.x - Math.cos(moveAngle) * 15 + MathUtils.rand(-5,5), player.y - Math.sin(moveAngle) * 15 + MathUtils.rand(-5,5), 0, 1, varColor('--accent'), 0.5);
         }
     }
-    if(player.timers.dodge > 0) player.timers.dodge -= dt;
     if(player.timers.immunity > 0) player.timers.immunity -= dt;
-    if(player.timers.dashActive > 0) player.timers.dashActive -= dt;
 
     // Apply movement
     if(player.stats.fuel > 0 || speed < 50) {
@@ -273,8 +388,8 @@ function update(dt) {
         player.y = MathUtils.clamp(player.y, -WORLD_SIZE, WORLD_SIZE);
     } else {
         // Out of fuel, severely crippled movement
-        player.x += (player.vx * 0.1) * dt;
-        player.y += (player.vy * 0.1) * dt;
+        player.x += (player.vx * 0.2) * dt;
+        player.y += (player.vy * 0.2) * dt;
     }
 
     // Facing angle
@@ -309,6 +424,10 @@ function update(dt) {
         }
     } else if (player.activeWhipBeam) {
         player.activeWhipBeam.dead = true;
+        if(player.activeWhipBeam.graphics) {
+            player.activeWhipBeam.graphics.destroy();
+            player.activeWhipBeam.graphics = null;
+        }
         player.activeWhipBeam = null;
     }
     
@@ -322,6 +441,7 @@ function update(dt) {
     if(player.damageIntensity > 0) {
         player.damageIntensity = Math.max(0, player.damageIntensity - dt);
     }
+    if(player.timers.flash > 0) player.timers.flash -= dt;
 
     // --- Resource Regen & Drain ---
     if(speed > 10) {
@@ -330,7 +450,14 @@ function update(dt) {
             eff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
         }
         
-        player.stats.fuel -= (speed / player.stats.maxSpeed) * 9 * eff * dt;
+        // 1. Calculate the base drain
+        let baseDrain = (speed / player.stats.maxSpeed) * 9 * eff * dt;        
+        // 2. Calculate the flat reduction for this specific frame
+        let flatReduction = (player.stats.flatFuelReduction || 0) * dt;
+        // 3. Apply the reduction, preventing negative drain (healing)
+        let finalDrain = Math.max(0, baseDrain - flatReduction);
+        
+        player.stats.fuel -= finalDrain;
         if(player.stats.fuel < 0) player.stats.fuel = 0;
         // Engine particles
         if(Math.random() < 0.5) {
@@ -351,16 +478,118 @@ function update(dt) {
         }
     }
 
+    // --- Thruster Audio Loop ---
+    if (!GAME.thrusterAudio) {
+        GAME.thrusterAudio = new Audio('sounds/thruster.ogg');
+        GAME.thrusterAudio.loop = true;
+        GAME.thrusterAudio.volume = 0;
+        GAME.thrusterAudio.preservesPitch = false;
+        GAME.thrusterAudio.mozPreservesPitch = false;
+        GAME.thrusterAudio.webkitPreservesPitch = false;
+        // Attempt to start playing (will succeed once player has interacted with the page)
+        GAME.thrusterAudio.play().catch(() => {});
+    }
+
+    if (GAME.thrusterAudio && !GAME.thrusterAudio.paused) {
+        let baseMax = player.stats.maxSpeed;
+        
+        // 1. Volume Calculation
+        let targetVol = 0;
+        if (speed >= 10) {
+            // Scales from 30% at 10 speed to 100% at maxSpeed
+            targetVol = 0.3 + 0.7 * Math.min(1.0, (speed - 10) / Math.max(1, baseMax - 10));
+        } else if (speed > 0.5) {
+            // Fades out below 10 speed
+            targetVol = 0.3 * (speed / 10);
+        }
+        GAME.thrusterAudio.volume = targetVol;
+
+        // 2. Pitch Calculation (Semitones)
+        let baseSemi = -2;
+        if (speed >= 10) {
+            // Scales from -2 to 0 between 10 speed and 50% maxSpeed
+            baseSemi = -2 + 2 * Math.min(1.0, (speed - 10) / Math.max(1, (baseMax * 0.5) - 10));
+        }
+        
+        // 3. Boost Pitch Calculation
+        let boostProgress = (player.timers.boostCharge || 0) / 2.0;
+        let finalSemi = baseSemi + (7 * boostProgress);
+        
+        GAME.thrusterAudio.playbackRate = Math.pow(2, finalSemi / 12);
+    }
+
     for(let i=0; i<4; i++) {
         if(player.skills[i].cd > 0) player.skills[i].cd -= dt;
     }
 
     // --- Entity Updates ---
     for(let i=entities.length-1; i>=0; i--) {
-        if(entities[i].dead) {
+        let e = entities[i];
+        let preX = e.x; let preY = e.y;
+        
+        if (e instanceof Enemy || e instanceof BrutalistMonolith || e instanceof FungalNode) {
+            if (e.ramCooldown === undefined) e.ramCooldown = 0;
+            if (e.ramCooldown > 0) e.ramCooldown -= dt;
+            
+            if (e.z <= 0) {
+                let distToPlayer = MathUtils.distance(e.x, e.y, player.x, player.y);
+                if (distToPlayer < (player.radius + e.radius)) {
+                    if (e.ramCooldown <= 0) {
+                        e.ramCooldown = 0.4;
+                        
+                        let currentSpeed = Math.hypot(player.vx, player.vy);
+                        let speedDelta = Math.max(0, currentSpeed - player.stats.maxSpeed);
+                        
+                        // 1% extra damage per unit of speed over base maxSpeed
+                        let momentumMult = 1.0 + (speedDelta * 0.01);
+                        // Progress towards the theoretical 1.5x max boost (0.0 to 1.0)
+                        let boostProgress = Math.min(1.0, speedDelta / (player.stats.maxSpeed * 0.5));
+
+                        let totalDamagePool = (player.stats.damage.min + player.stats.damage.max) / 2;
+                        let rating = player.stats.collisionRating || player.stats.collisionDamage || 0;
+                        let multiplier = getCollisionMultiplier(rating, player.level);
+                        let finalDamage = totalDamagePool * multiplier * momentumMult;
+
+                        // Take recoil. Reduces recoil by up to 80% at maximum boost speed
+                        // Cap the damage used for recoil to the enemy's current HP to prevent overkill suicide!
+                        let effectiveDamage = Math.min(finalDamage, e.hp);
+                        let baseRecoil = effectiveDamage * 0.25; // Dropped from 50% to 25% for better survivability
+                        let recoil = baseRecoil * (1.0 - (boostProgress * 0.8));
+                        if (recoil > 0) player.takeDamage(recoil, e);
+
+                        // Using a proxy source with 0 critChance bypasses crit rules
+                        let dummySource = { stats: { critChance: 0 } };
+                        e.takeDamage(finalDamage, dummySource, '#ff8800');
+
+                        // Player forces their way through, transferring knockback to the enemy
+                        let bounceAngle = Math.atan2(e.y - player.y, e.x - player.x);
+                        e.vx = Math.cos(bounceAngle) * (400 * momentumMult);
+                        e.vy = Math.sin(bounceAngle) * (400 * momentumMult);
+                        
+                        createParticles(e.x, e.y, e.z, 15 + (15 * boostProgress), '#ff8800');
+                        shockwaves.push(new Shockwave(e.x, e.y, e.z, '#ff8800', 40 + (20 * boostProgress)));
+                    }
+                }
+            }
+        }
+
+        if (e.dead) {
             entities.splice(i, 1);
-        } else if(entities[i].update(dt)) {
-            entities.splice(i, 1);
+        } else {
+            let remove = e.update(dt);
+            
+            if (e instanceof Enemy && !remove && !e.dead) {
+                if (e.empKnockbackTimer > 0) {
+                    e.empKnockbackTimer -= dt;
+                    e.x = preX + (e.empKnockbackVx * dt);
+                    e.y = preY + (e.empKnockbackVy * dt);
+                } else if (e.empSlowTimer > 0) {
+                    e.empSlowTimer -= dt;
+                    e.x = preX + (e.x - preX) * 0.1; // Only travel 10% of intended delta 
+                    e.y = preY + (e.y - preY) * 0.1;
+                }
+            }
+            if (remove) entities.splice(i, 1);
         }
     }
     for(let i=projectiles.length-1; i>=0; i--) {
@@ -471,7 +700,8 @@ function update(dt) {
     let dist = MathUtils.rand(800, 1200);
     if (GAME.bossDefeated && Math.random() < 0.20) {
         let r = Math.random();
-        if (r < 0.5) {
+        let spreaderCount = entities.filter(ent => ent instanceof MycelialSpreader).length;
+        if (r < 0.5 && spreaderCount < 4) {
             entities.push(new MycelialSpreader(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
         } else {
             entities.push(new MonolithArchitect(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist));
@@ -491,14 +721,18 @@ updateUI();
 }
 
 function draw() {
-    ctx.fillStyle = varColor('--bg');
-    ctx.fillRect(0, 0, cw, ch);
     
     // Draw Stars
     let time = Date.now() / 1000;
     for(let s of GAME.stars) {
+        if (!s.sprite) {
+            s.sprite = new PIXI.Sprite(GAME.textures.star);
+            s.sprite.anchor.set(0.5);
+            GAME.layers.background.addChild(s.sprite);
+        }
         let p = project(s.x, s.y, s.z);
         if(p) {
+            s.sprite.visible = true;
             let alpha = 0.3 + 0.4 * Math.sin(time * s.pulseSpeed + s.offset);
             
             let stretch = 1;
@@ -514,56 +748,58 @@ function draw() {
                 }
             }
 
-            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
             let scale = getScale(s.z);
-            if (stretch > 1) {
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.rotate(drawAngle);
-                ctx.scale(stretch, 1 / stretch);
-                ctx.beginPath(); ctx.arc(0, 0, s.size * scale, 0, Math.PI*2); ctx.fill();
-                ctx.restore();
-            } else {
-                ctx.beginPath(); ctx.arc(p.x, p.y, s.size * scale, 0, Math.PI*2); ctx.fill();
-            }
+            s.sprite.x = p.x;
+            s.sprite.y = p.y;
+            s.sprite.rotation = drawAngle;
+            s.sprite.scale.set((s.size / 10) * scale * stretch, (s.size / 10) * scale * (1 / stretch));
+            s.sprite.alpha = alpha;
+        } else {
+            s.sprite.visible = false;
         }
     }
 
     // Draw Clouds
     for(let c of GAME.clouds) {
+        if(!c.sprite) {
+            c.sprite = new PIXI.Sprite(GAME.textures.cloud);
+            c.sprite.anchor.set(0.5);
+            c.sprite.tint = (c.r << 16) + (c.g << 8) + c.b; 
+            GAME.layers.background.addChild(c.sprite);
+        }
         let p = project(c.x, c.y, c.z);
         if(p) {
+            c.sprite.visible = true;
             let scale = getScale(c.z);
             let rad = c.radius * scale;
-            let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
-            grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${c.alpha})`);
-            grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
-            ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI*2); ctx.fill();
+            c.sprite.x = p.x;
+            c.sprite.y = p.y;
+            c.sprite.scale.set(rad / 128); // Original rad / 128px canvas radius
+            c.sprite.alpha = c.alpha;
+        } else {
+            c.sprite.visible = false;
         }
     }
 
-    drawGrid(ctx);
+    drawGrid();
 
     // Draw Mycelial Clouds
-    ctx.fillStyle = 'rgba(153, 255, 51, 0.1)';
-    ctx.strokeStyle = 'rgba(153, 255, 51, 0.2)';
-    ctx.lineWidth = 1;
+    GAME.graphics.mycelial.clear();
     for (const loop of mycelialLoops) {
         if (loop.length < 3) continue;
         
         let p0 = project(loop[0].x, loop[0].y, 0);
         if (!p0) continue;
 
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
+        GAME.graphics.mycelial.beginFill(0x99ff33, 0.1);
+        GAME.graphics.mycelial.lineStyle(1, 0x99ff33, 0.2);
+        GAME.graphics.mycelial.moveTo(p0.x, p0.y);
         for (let i = 1; i < loop.length; i++) {
             let p = project(loop[i].x, loop[i].y, 0);
-            if (p) ctx.lineTo(p.x, p.y);
+            if (p) GAME.graphics.mycelial.lineTo(p.x, p.y);
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        GAME.graphics.mycelial.closePath();
+        GAME.graphics.mycelial.endFill();
 
         // Gaseous particles
         if (Math.random() < 0.1) {
@@ -572,104 +808,69 @@ function draw() {
         }
     }
 
-    // Draw order: Z-sorting
-    RENDER_LIST.length = 0;
-    for(let i=0; i<entities.length; i++) RENDER_LIST.push(entities[i]);
-    for(let i=0; i<drops.length; i++) RENDER_LIST.push(drops[i]);
-    for(let i=0; i<xpOrbs.length; i++) RENDER_LIST.push(xpOrbs[i]);
-    for(let i=0; i<hpOrbs.length; i++) RENDER_LIST.push(hpOrbs[i]);
-    for(let i=0; i<particles.length; i++) RENDER_LIST.push(particles[i]);
-    for(let i=0; i<projectiles.length; i++) RENDER_LIST.push(projectiles[i]);
-    for(let i=0; i<shockwaves.length; i++) RENDER_LIST.push(shockwaves[i]);
-    for(let i=0; i<warpTrails.length; i++) RENDER_LIST.push(warpTrails[i]);
-    if (player.activeWhipBeam) RENDER_LIST.push(player.activeWhipBeam);
-    RENDER_LIST.push({ isPlayerShip: true, x: player.x, y: player.y, z: 0 });
-    
-    RENDER_LIST.sort((a, b) => b.z - a.z); // draw deep space first
+    // Loop through everything and call .draw() to update their Pixi properties natively
+    for(let i=0; i<entities.length; i++) entities[i].draw();
+    for(let i=0; i<drops.length; i++) drops[i].draw();
+    for(let i=0; i<xpOrbs.length; i++) xpOrbs[i].draw();
+    for(let i=0; i<hpOrbs.length; i++) hpOrbs[i].draw();
+    for(let i=0; i<particles.length; i++) particles[i].draw();
+    for(let i=0; i<projectiles.length; i++) projectiles[i].draw();
+    for(let i=0; i<shockwaves.length; i++) shockwaves[i].draw();
+    for(let i=0; i<warpTrails.length; i++) warpTrails[i].draw();
+    if (player.activeWhipBeam) player.activeWhipBeam.draw();
 
-    for(let i=0; i<RENDER_LIST.length; i++) {
-        let obj = RENDER_LIST[i];
-        if(obj.isPlayerShip) {
-            let p = project(player.x, player.y, 0);
-            if(p) {
-                let s = getScale(0);
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.scale(s, s);
-                
-                // Ability Range Faint Overlays (Under ship, stationary relative to ship orientation)
-                ctx.lineWidth = 1;
+    // Player PIXI Sync
+    let p = project(player.x, player.y, 0);
+    if(p) {
+        player.pixiObj.visible = true;
+        let s = getScale(0);
+        player.pixiObj.position.set(p.x, p.y);
+        player.pixiObj.scale.set(s);
+        player.pixiObj.zIndex = 0;
+        
+        player.body.rotation = player.angle;
 
-                // Pulse Blaster Range (Skill 1) - 6 Grid Squares = 1200 units
-                ctx.strokeStyle = 'rgba(0, 210, 255, 0.05)';
-                ctx.beginPath(); ctx.arc(0,0,1200,0,Math.PI*2); ctx.stroke();
-
-                // EMP (Skill 2) - reduced 40% to 270
-                ctx.strokeStyle = 'rgba(51, 204, 255, 0.1)';
-                ctx.beginPath(); ctx.arc(0,0,270,0,Math.PI*2); ctx.stroke();
-                
-                // Warp Dash (Skill 3 limit) - reduced 40% to 300
-                ctx.strokeStyle = 'rgba(153, 51, 255, 0.08)';
-                ctx.beginPath(); ctx.arc(0,0,300,0,Math.PI*2); ctx.stroke();
-                
-                // Singularity Placement Indicator - reduced 40% to 360
-                ctx.strokeStyle = 'rgba(255, 0, 85, 0.05)';
-                ctx.beginPath(); ctx.arc(0,0,360,0,Math.PI*2); ctx.stroke();
-
-                // Dash Cooldown Indicator
-                if(player.timers.dodge > 0) {
-                    let dodgeProgress = player.timers.dodge / 2.0;
-                    ctx.strokeStyle = `rgba(255, 255, 255, 0.5)`;
-                    ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.arc(0,0,32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * dodgeProgress); ctx.stroke();
-                }
-
-                ctx.rotate(player.angle);
-                
-                if (player.timers.immunity > 0) {
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#fff';
-                }
-
-                // Ship Body
-                ctx.fillStyle = '#111';
-                ctx.strokeStyle = player.timers.immunity > 0 ? '#fff' : varColor('--accent');
-                ctx.lineWidth = player.timers.immunity > 0 ? 3 : 2;
-                ctx.beginPath();
-                ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-10, 0); ctx.lineTo(-15, -15);
-                ctx.closePath();
-                ctx.fill(); ctx.stroke();
-                
-                ctx.shadowBlur = 0;
-
-                // Shields
-                if(player.stats.shields > 0) {
-                    ctx.strokeStyle = `rgba(51, 204, 255, ${0.2 + (player.stats.shields/player.stats.maxShields)*0.5})`;
-                    ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.arc(0,0,25,0,Math.PI*2); ctx.stroke();
-                }
-                ctx.restore();
-            }
+        let accentHex = parseColor(varColor('--accent'));
+        if (player.timers.immunity > 0 || player.timers.flash > 0) {
+            player.body.tint = 0xffffff;
         } else {
-            obj.draw(ctx);
+            player.body.tint = accentHex;
         }
+        
+        player.rangeOverlays.clear();
+        player.rangeOverlays.lineStyle(1, 0x00d2ff, 0.05); player.rangeOverlays.drawCircle(0, 0, 1200);
+        player.rangeOverlays.lineStyle(1, 0x33ccff, 0.1); player.rangeOverlays.drawCircle(0, 0, 270);
+        player.rangeOverlays.lineStyle(1, 0x9933ff, 0.08); player.rangeOverlays.drawCircle(0, 0, 300);
+        player.rangeOverlays.lineStyle(1, 0xff0055, 0.05); player.rangeOverlays.drawCircle(0, 0, 360);
+
+        if(player.timers.boostCharge > 0) {
+            let boostProgress = player.timers.boostCharge / 2.0;
+            player.rangeOverlays.lineStyle(2, 0xffffff, 0.5);
+            player.rangeOverlays.arc(0, 0, 32, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * boostProgress);
+        }
+
+        player.shieldGraphics.clear();
+        if(player.stats.shields > 0) {
+            let shieldAlpha = 0.2 + (player.stats.shields/player.stats.maxShields)*0.5;
+            player.shieldGraphics.lineStyle(2, 0x33ccff, shieldAlpha);
+            player.shieldGraphics.drawCircle(0,0,25);
+        }
+    } else {
+        player.pixiObj.visible = false;
     }
 
-    // Floating Text (Always on top)
-    for(let ft of floatingTexts) {
-        ft.draw(ctx);
-    }
+    for(let i=0; i<floatingTexts.length; i++) floatingTexts[i].draw();
 
-    // Danger Screen Glow Overlay
+    // Danger UI Overlay
+    GAME.graphics.damageGlow.clear();
     if (player.damageIntensity > 0.1) {
         let alpha = Math.min(0.6, player.damageIntensity * 0.5);
-        let grad = ctx.createRadialGradient(cw/2, ch/2, Math.min(cw,ch)*0.2, cw/2, ch/2, Math.max(cw,ch)*0.8);
-        grad.addColorStop(0, 'rgba(255,0,0,0)');
-        grad.addColorStop(1, `rgba(255,0,0,${alpha})`);
-        ctx.fillStyle = grad;
-        ctx.fillRect(0,0,cw,ch);
+        GAME.graphics.damageGlow.beginFill(0xff0000, alpha);
+        GAME.graphics.damageGlow.drawRect(0, 0, cw, ch);
+        GAME.graphics.damageGlow.endFill();
     }
 
+    GAME.graphics.bossIndicator.visible = false;
     if (GAME.activeBoss && !project(GAME.activeBoss.x, GAME.activeBoss.y, GAME.activeBoss.z)) {
         let angleToBoss = MathUtils.angle(player.x, player.y, GAME.activeBoss.x, GAME.activeBoss.y);
         let screenX = cw/2 + Math.cos(angleToBoss) * (cw/2 - 40);
@@ -677,36 +878,34 @@ function draw() {
         screenX = MathUtils.clamp(screenX, 40, cw - 40);
         screenY = MathUtils.clamp(screenY, 40, ch - 40);
 
-        ctx.save();
-        ctx.translate(screenX, screenY);
-        ctx.rotate(angleToBoss + Math.PI/2);
-        let icon = getIcon('BossSkull', '#ff0000');
-        if (icon.img.complete) {
-            ctx.drawImage(icon.img, -15, -15, 30, 30);
-        }
-        ctx.restore();
+        GAME.graphics.bossIndicator.visible = true;
+        GAME.graphics.bossIndicator.position.set(screenX, screenY);
+        GAME.graphics.bossIndicator.rotation = angleToBoss + Math.PI/2;
     }
 
     drawMinimap();
 }
 
 function drawMinimap() {
-    let w = miniCanvas.width = 200;
-    let h = miniCanvas.height = 200;
-    
-    miniCtx.fillStyle = '#050508';
-    miniCtx.fillRect(0,0,w,h);
+    if (!GAME.minimapGraphics) return;
+
+    let g = GAME.minimapGraphics;
+    g.clear();
+
+    let w = 200;
+    let h = 200;
     
     let mapScale = w / (WORLD_SIZE * 2);
     
     // Draw FOW & Radar
-    miniCtx.fillStyle = 'rgba(255,255,255,0.1)';
+    g.beginFill(0xffffff, 0.1);
     for(let [key, val] of GAME.fowMap) {
         let parts = key.split(',');
         let cx = (parseInt(parts[0]) * 200 + WORLD_SIZE) * mapScale;
         let cy = (parseInt(parts[1]) * 200 + WORLD_SIZE) * mapScale;
-        miniCtx.fillRect(cx, cy, 200*mapScale, 200*mapScale);
+        g.drawRect(cx, cy, 200*mapScale, 200*mapScale);
     }
+    g.endFill();
     
     // Entities on minimap
     for(let e of entities) {
@@ -714,19 +913,21 @@ function drawMinimap() {
         let my = (e.y + WORLD_SIZE) * mapScale;
         if(mx<0 || mx>w || my<0 || my>h) continue;
         
-        if(e instanceof Asteroid) { miniCtx.fillStyle = '#555'; miniCtx.fillRect(mx-1, my-1, 2, 2); }
-        if(e instanceof Enemy) { miniCtx.fillStyle = '#f00'; miniCtx.fillRect(mx-1, my-1, 3, 3); }
+        if(e instanceof Asteroid) { g.beginFill(0x555555); g.drawRect(mx-1, my-1, 2, 2); g.endFill(); }
+        if(e instanceof Enemy) { g.beginFill(0xff0000); g.drawRect(mx-1, my-1, 3, 3); g.endFill(); }
     }
     
     // Player
     let px = (player.x + WORLD_SIZE) * mapScale;
     let py = (player.y + WORLD_SIZE) * mapScale;
-    miniCtx.fillStyle = varColor('--accent');
-    miniCtx.beginPath(); miniCtx.arc(px, py, 3, 0, Math.PI*2); miniCtx.fill();
+    let accentHex = parseColor(varColor('--accent'));
+    g.beginFill(accentHex);
+    g.drawCircle(px, py, 3);
+    g.endFill();
     
     // Radar circle
-    miniCtx.strokeStyle = 'rgba(0, 210, 255, 0.3)';
-    miniCtx.beginPath(); miniCtx.arc(px, py, 800 * mapScale, 0, Math.PI*2); miniCtx.stroke();
+    g.lineStyle(1, 0x00d2ff, 0.3);
+    g.drawCircle(px, py, 800 * mapScale);
 }
 
 function varColor(name) {
@@ -748,8 +949,8 @@ function loop(timestamp) {
  * INPUT LISTENERS
  * ========================================== */
 window.addEventListener('resize', () => {
-    cw = canvas.width = window.innerWidth;
-    ch = canvas.height = window.innerHeight;
+    cw = window.innerWidth;
+    ch = window.innerHeight;
 });
 window.addEventListener('keydown', e => {
     let k = e.key.toLowerCase();
@@ -797,6 +998,7 @@ function useFuelCell() {
 
 // Setup
 player.updateStats();
+initPixi();
 initMap();
 player.stats.fuel = player.stats.maxFuel; // Start full
 inventory[0] = {
@@ -806,7 +1008,7 @@ inventory[0] = {
     tier: 0,
     itemLevel: 1,
     stackable: true,
-    count: 3,
+    count: 5,
     desc: 'Restores 20 Fuel on use.'
 };
 renderInventory();
