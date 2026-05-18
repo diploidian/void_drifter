@@ -18,7 +18,7 @@ const BASE_STATS = {
     maxShields: 25, shields: 25, shieldRegen: 5, shieldRegenPersistent: 0,
     maxEnergy: 100, energy: 100, energyRegen: 4, energyOnKill: 0,
     maxFuel: 100, fuel: 100, fuelEfficiency: 1.0, flatFuelReduction: 0,
-    maxSpeed: 200, acceleration: 400, friction: 0.95,
+    maxSpeed: 200, acceleration: 400, friction: 0.98,
     damage: { min: 9, max: 13 }, fireRate: 100, fireRateRating: 0, critChance: 5, critRating: 0, critDamage: 145,
     collisionRating: 0, collisionDamage: 0
 };

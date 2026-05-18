@@ -2306,8 +2306,8 @@ function spawnDrop(x, y, forceResource = false, item = null) {
 class EmpBlast {
     constructor(x, y, radius, damage, color) {
         let maxRadius = radius; // TWEAK: blast radius
-        let displacementPower = 100; // TWEAK: displacement power
-        let waveExpansionSpeed = 0.5; // TWEAK: wave expansion speed
+        let displacementPower = 200; // TWEAK: displacement power
+        let waveExpansionSpeed = .6; // TWEAK: wave expansion speed
         let showVectors = false; // TWEAK: show vectors
 
         this.x = x; this.y = y; this.z = 0;
@@ -2319,29 +2319,40 @@ class EmpBlast {
         this.hitEntities = new Set();
         this.dead = false;
         
-        // Ripple displacement effect logic
         this.rippleLife = waveExpansionSpeed;
         this.maxRippleLife = waveExpansionSpeed;
         this.displacementPower = displacementPower;
+        this.showVectors = showVectors;
 
+        // Visual ring graphics
         this.graphics = new PIXI.Graphics();
-        
-        this.displacementSprite = new PIXI.Sprite(this.getVectorTexture(showVectors));
-        this.displacementSprite.anchor.set(0.5);
-        this.displacementSprite.scale.set(0.1);
-        
-        this.displacementFilter = new PIXI.DisplacementFilter(this.displacementSprite, displacementPower);
-        
         GAME.layers.game.addChild(this.graphics);
-        GAME.layers.game.addChild(this.displacementSprite);
+
+        // Debug vector field overlay (Separated from displacement data!)
+        if (this.showVectors) {
+            this.vectorGraphics = new PIXI.Graphics();
+            GAME.layers.game.addChild(this.vectorGraphics);
+        }
+
+        // Generate clean displacement map data (NO baked lines)
+        this.displacementSprite = new PIXI.Sprite(this.generateBaseVectorTexture());
+        this.displacementSprite.anchor.set(0.5);
+        this.displacementSprite.scale.set(0.001); // Prevent 0-scale crash
+        this.displacementSprite.renderable = false; // Hide the raw texture from being drawn!
         
+        GAME.layers.background.addChild(this.displacementSprite);
+        
+        this.displacementFilter = new PIXI.DisplacementFilter(this.displacementSprite, this.displacementPower);
+        this.displacementFilter.padding = 64; // Prevents hard edge clipping artifacts
+
         let currentFilters = GAME.layers.game.filters || [];
         currentFilters.push(this.displacementFilter);
         GAME.layers.game.filters = currentFilters;
     }
 
-    getVectorTexture(showVectors) {
-        if (GAME.textures.vectorRipple) return GAME.textures.vectorRipple;
+    generateBaseVectorTexture() {
+        // Cache the pure math texture once globally so we aren't reallocating VRAM
+        if (GAME.textures.pureVectorRipple) return GAME.textures.pureVectorRipple;
 
         const canvas = document.createElement('canvas');
         canvas.width = 256; canvas.height = 256;
@@ -2357,54 +2368,29 @@ class EmpBlast {
                 let idx = (y * 256 + x) * 4;
 
                 if (dist > 0 && dist <= 128) {
-                    let nx = dx / dist;
-                    let ny = dy / dist;
+                    // Negate the vector to sample inner pixels, pushing the image OUTWARD
+                    let nx = -dx / dist;
+                    let ny = -dy / dist;
                     
-                    // A pulse ring Profile: peaks at 64, tails off to 128 and 0.
                     let strength = 0;
-                    if (dist >= 64 && dist <= 128) {
-                        let normalized = (dist - 64) / 64; 
+                    if (dist >= 32 && dist <= 128) {
+                        let normalized = (dist - 32) / 96; 
                         strength = Math.sin(normalized * Math.PI); 
                     }
 
-                    // Map physical vector direction onto Red and Green color channels
-                    data[idx] = Math.max(0, Math.min(255, 128 + nx * strength * 127));
+                    // Strict vector coordinate to color mapping
+                    data[idx]   = Math.max(0, Math.min(255, 128 + nx * strength * 127));
                     data[idx+1] = Math.max(0, Math.min(255, 128 + ny * strength * 127));
                     data[idx+2] = 128;
                     data[idx+3] = 255;
                 } else {
-                    data[idx] = 128;
-                    data[idx+1] = 128;
-                    data[idx+2] = 128;
-                    data[idx+3] = 255;
+                    data[idx] = 128; data[idx+1] = 128; data[idx+2] = 128; data[idx+3] = 255;
                 }
             }
         }
         ctx.putImageData(imgData, 0, 0);
-
-        if (showVectors) {
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
-            ctx.beginPath();
-            for (let y = 16; y < 256; y += 32) {
-                for (let x = 16; x < 256; x += 32) {
-                    let dx = x - 128;
-                    let dy = y - 128;
-                    let dist = Math.hypot(dx, dy);
-                    if (dist > 0 && dist < 128) {
-                        let strength = 0;
-                        if (dist >= 64 && dist <= 128) {
-                            strength = Math.sin(((dist - 64) / 64) * Math.PI); 
-                        }
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(x + (dx/dist) * strength * 15, y + (dy/dist) * strength * 15);
-                    }
-                }
-            }
-            ctx.stroke();
-        }
-
-        GAME.textures.vectorRipple = PIXI.Texture.from(canvas);
-        return GAME.textures.vectorRipple;
+        GAME.textures.pureVectorRipple = PIXI.Texture.from(canvas);
+        return GAME.textures.pureVectorRipple;
     }
 
     update(dt) {
@@ -2415,6 +2401,7 @@ class EmpBlast {
         let progress = 1.0 - Math.max(0, this.life / this.maxLife);
         let currentRadius = this.maxRadius * progress;
 
+        // Entity Collision Pipeline
         for(let e of entities) {
             if (e instanceof Enemy && !e.dead && !this.hitEntities.has(e) && e.z <= 0) {
                 if (MathUtils.distance(this.x, this.y, e.x, e.y) <= currentRadius + e.radius) {
@@ -2430,41 +2417,34 @@ class EmpBlast {
             }
         }
         
-        for(let i=projectiles.length-1; i>=0; i--) {
+        // Projectile Destruction Pipeline
+        for(let i = projectiles.length - 1; i >= 0; i--) {
             let p = projectiles[i];
             if (!p.isPlayer && !this.hitEntities.has(p)) {
                 if (MathUtils.distance(this.x, this.y, p.x, p.y) <= currentRadius) {
                     this.hitEntities.add(p);
                     createParticles(p.x, p.y, 0, 5, p.color);
-                    if (p.pixiObj) {
-                        p.pixiObj.destroy();
-                        p.pixiObj = null;
-                    }
+                    if (p.pixiObj) { p.pixiObj.destroy(); p.pixiObj = null; }
                     projectiles.splice(i, 1);
                 }
             }
         }
 
+        // Cleanup Lifecycle
         if(this.life <= 0 && this.rippleLife <= 0) {
             this.dead = true;
-            if(this.graphics) {
-                this.graphics.destroy();
-                this.graphics = null;
-            }
+            if(this.graphics) { this.graphics.destroy(); this.graphics = null; }
+            if(this.vectorGraphics) { this.vectorGraphics.destroy(); this.vectorGraphics = null; }
+            
             if(this.displacementSprite) {
                 this.displacementSprite.destroy();
                 this.displacementSprite = null;
             }
             if(GAME.layers.game.filters) {
                 GAME.layers.game.filters = GAME.layers.game.filters.filter(f => f !== this.displacementFilter);
-                if (GAME.layers.game.filters.length === 0) {
-                    GAME.layers.game.filters = null;
-                }
+                if (GAME.layers.game.filters.length === 0) GAME.layers.game.filters = null;
             }
-            if(this.displacementFilter) {
-                this.displacementFilter.destroy();
-                this.displacementFilter = null;
-            }
+            if(this.displacementFilter) { this.displacementFilter.destroy(); this.displacementFilter = null; }
             return true;
         }
         return false;
@@ -2472,49 +2452,98 @@ class EmpBlast {
 
     draw() {
         if(!this.graphics) return;
-        this.graphics.clear();
+        
         let p = project(this.x, this.y, this.z);
         if(!p) {
             this.graphics.visible = false;
+            if(this.vectorGraphics) this.vectorGraphics.visible = false;
             if(this.displacementSprite) this.displacementSprite.visible = false;
             return;
         }
         
         let s = getScale(this.z);
-        
+        let rippleProgress = 1.0 - Math.max(0, this.rippleLife / this.maxRippleLife);
+        let currentRippleRadius = this.maxRadius * rippleProgress;
+
+        // 1. Draw Expansion Shockwave Rings
+        this.graphics.clear();
         if (this.life > 0) {
             this.graphics.visible = true;
             let progress = 1.0 - (this.life / this.maxLife);
             let currentRadius = this.maxRadius * progress;
             let alpha = 1.0 - Math.pow(progress, 2);
-            
             let c = typeof this.color === 'string' ? parseColor(this.color) : this.color;
+            
             this.graphics.lineStyle(4 * s, c, alpha);
             this.graphics.drawCircle(p.x, p.y, currentRadius * s);
-            
-            this.graphics.beginFill(c, alpha * 0.2);
+            this.graphics.beginFill(c, alpha * 0.15);
             this.graphics.drawCircle(p.x, p.y, currentRadius * s);
             this.graphics.endFill();
-            this.graphics.zIndex = this.z;
         } else {
             this.graphics.visible = false;
         }
         
-        if (this.displacementSprite) {
-            if (this.rippleLife > 0) {
-                this.displacementSprite.visible = true;
-                let rippleProgress = 1.0 - (this.rippleLife / this.maxRippleLife);
-                let currentRippleRadius = this.maxRadius * rippleProgress;
-                
-                // Texture is 256x256, so radius is 128
-                this.displacementSprite.scale.set((currentRippleRadius / 128) * s);
-                this.displacementSprite.position.set(p.x, p.y);
-                
-                // Fade out displacement over time
-                this.displacementFilter.scale.set((1.0 - Math.pow(rippleProgress, 2)) * this.displacementPower * s);
-            } else {
-                this.displacementSprite.visible = false;
+        // 2. Drive the WebGL Displacement Filter Coordinates
+        if (this.displacementSprite && this.rippleLife > 0) {
+            this.displacementSprite.visible = true;
+            
+            // Map texture space bounds (128px center radius) to current world space expansion
+            // Clamp scale to a minimum of 0.001 to prevent matrix inversion NaN crashing WebGL!
+            this.displacementSprite.scale.set(Math.max(0.001, (currentRippleRadius / 128) * s));
+            this.displacementSprite.position.set(p.x, p.y);
+            
+            // Smoothly ease down displacement intensity over execution time
+            let fadeFactor = 1.0 - Math.pow(rippleProgress, 3);
+            this.displacementFilter.scale.set(fadeFactor * this.displacementPower * s);
+        } else if (this.displacementSprite) {
+            this.displacementSprite.visible = false;
+        }
+
+        // 3. Render High-Tech Mathematical Vector Lines Overlay
+        if (this.showVectors && this.vectorGraphics && this.rippleLife > 0) {
+            this.vectorGraphics.clear();
+            this.vectorGraphics.visible = true;
+            
+            let alpha = 1.0 - Math.pow(rippleProgress, 2);
+            this.vectorGraphics.lineStyle(1.2 * s, 0x00ffff, alpha * 0.3); // TWEAK: vector graphics color & alpha
+
+            // Create a high-tech screen coordinate sample grid localized over the blast zone
+            const step = 24 * s; 
+            const bounds = currentRippleRadius * s;
+
+            for (let fy = p.y - bounds; fy <= p.y + bounds; fy += step) {
+                for (let fx = p.x - bounds; fx <= p.x + bounds; fx += step) {
+                    let gdx = fx - p.x;
+                    let gdy = fy - p.y;
+                    let gdist = Math.hypot(gdx, gdy);
+
+                    // Only draw vectors aligning with the active wavefront radius
+                    if (gdist > 0 && gdist <= bounds) {
+                        let innerRadiusTarget = bounds * 0.3;
+                        let strength = 0;
+                        
+                        if (gdist >= innerRadiusTarget && gdist <= bounds) {
+                            let norm = (gdist - innerRadiusTarget) / (bounds - innerRadiusTarget);
+                            strength = Math.sin(norm * Math.PI);
+                        }
+
+                        if (strength > 0.05) {
+                            let nvx = gdx / gdist;
+                            let nvy = gdy / gdist;
+                            let arrowLength = 14 * strength * s;
+
+                            // Draw the vector direction line segment
+                            this.vectorGraphics.moveTo(fx, fy);
+                            this.vectorGraphics.lineTo(fx + nvx * arrowLength, fy + nvy * arrowLength);
+                            
+                            // Draw point coordinates representing flow anchors
+                            this.vectorGraphics.drawCircle(fx, fy, 1 * s);
+                        }
+                    }
+                }
             }
+        } else if (this.vectorGraphics) {
+            this.vectorGraphics.visible = false;
         }
     }
 }
@@ -2561,7 +2590,7 @@ function initMap() {
         entities.push(new Asteroid(MathUtils.rand(-WORLD_SIZE, WORLD_SIZE), MathUtils.rand(-WORLD_SIZE, WORLD_SIZE), MathUtils.rand(20, 80)));
     }
     
-    for(let i=0; i<400; i++) {
+    for(let i=0; i<5000; i++) { // TWEAK: Star Count
         GAME.stars.push({
             x: MathUtils.rand(-WORLD_SIZE*2, WORLD_SIZE*2),
             y: MathUtils.rand(-WORLD_SIZE*2, WORLD_SIZE*2),

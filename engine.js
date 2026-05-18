@@ -25,7 +25,7 @@ function drawGrid() {
     let g = GAME.graphics.grid;
     g.clear();
     g.lineStyle(1, 0x1a2b4c, 0.3);
-    let gridSize = 200;
+    let gridSize = 200; // TWEAK: Grid density
     
     // Determine visible world bounds
     let scale = getScale(0);
@@ -241,32 +241,7 @@ function useSkill(index) {
     } 
     else if(index === 1) { // EMP
         playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/emp_blast.ogg');
-        createParticles(player.x, player.y, 0, 70, varColor('--shield'));
-        shockwaves.push(new Shockwave(player.x, player.y, 0, varColor('--shield'), 350));
-        
-        for(let i=projectiles.length-1; i>=0; i--) {
-            let p = projectiles[i];
-            if (!p.isPlayer && MathUtils.distance(player.x, player.y, p.x, p.y) < 270) {
-                createParticles(p.x, p.y, 0, 5, p.color);
-                if (p.pixiObj) {
-                    p.pixiObj.destroy();
-                    p.pixiObj = null;
-                }
-                projectiles.splice(i, 1);
-            }
-        }
-        
-        for(let e of entities) {
-            if(e instanceof Enemy && !e.dead && MathUtils.distance(player.x, player.y, e.x, e.y) < 270) {
-                e.takeDamage(getDamage(player) * 0.75, player, varColor('--shield'));
-                
-                let kbAngle = MathUtils.angle(player.x, player.y, e.x, e.y);
-                e.empKnockbackVx = Math.cos(kbAngle) * 1000;
-                e.empKnockbackVy = Math.sin(kbAngle) * 1000;
-                e.empKnockbackTimer = 0.3; // 1000 speed for 0.3s = 300 units exact
-                e.empSlowTimer = 3.0;
-            }
-        }
+        entities.push(new EmpBlast(player.x, player.y, 600, getDamage(player) * 0.75, varColor('--shield')));
     }
     else if(index === 2) { // Warp Dash
         playSound('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/main/sounds/doorOpen_002.ogg');
@@ -444,7 +419,7 @@ function update(dt) {
     if(player.timers.flash > 0) player.timers.flash -= dt;
 
     // --- Resource Regen & Drain ---
-    if(speed > 10) {
+    if(speed > 30) {
         let eff = 1.0;
         if (equipment['Engine'] && equipment['Engine'].perk === 'Fuel Efficiency') {
             eff = equipment['Engine'].upgradedPerk ? 0.70 : 0.75;
