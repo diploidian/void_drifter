@@ -130,6 +130,32 @@ class Asteroid {
     }
 }
 
+function drawDashedPath(g, points, dash, gap) {
+    for (let i = 0; i < points.length - 1; i++) {
+        let p1 = points[i], p2 = points[i + 1];
+        let dx = p2.x - p1.x, dy = p2.y - p1.y;
+        let dist = Math.hypot(dx, dy);
+        let step = dash + gap;
+        for (let d = 0; d < dist; d += step) {
+            let t1 = d / dist;
+            let t2 = Math.min((d + dash) / dist, 1.0);
+            g.moveTo(p1.x + dx * t1, p1.y + dy * t1);
+            g.lineTo(p1.x + dx * t2, p1.y + dy * t2);
+        }
+    }
+}
+
+function drawDashedCircle(g, x, y, radius, dashes) {
+    let step = (Math.PI * 2) / dashes;
+    let dashLen = step * 0.5; // 50% dash, 50% gap
+    for (let i = 0; i < dashes; i++) {
+        let a1 = i * step;
+        let a2 = a1 + dashLen;
+        g.moveTo(x + Math.cos(a1) * radius, y + Math.sin(a1) * radius);
+        g.arc(x, y, radius, a1, a2);
+    }
+}
+
 class Enemy {
     constructor(x, y) {
         this.x = x; this.y = y; this.z = 0; // Spawn at z=0
@@ -183,11 +209,6 @@ class Enemy {
         this.body = new PIXI.Graphics();
         
         if (this.type === 'chaser') {
-            this.body.beginFill(0x000000, 0.8);
-            this.body.lineStyle(2, 0xffffff);
-            this.body.moveTo(15, 0); this.body.lineTo(-10, 10); this.body.lineTo(-5, 0); this.body.lineTo(-10, -10); this.body.closePath();
-            this.body.endFill();
-            
             this.comboOverlay = new PIXI.Graphics();
             this.comboOverlay.beginFill(0xffffff, 1.0);
             this.comboOverlay.moveTo(15, 0); this.comboOverlay.lineTo(-10, 10); this.comboOverlay.lineTo(-5, 0); this.comboOverlay.lineTo(-10, -10); this.comboOverlay.closePath();
@@ -196,15 +217,11 @@ class Enemy {
             
             this.pixiObj.addChild(this.body, this.comboOverlay);
         } else {
-            this.body.beginFill(0x000000, 0.8);
-            this.body.lineStyle(2, 0xffffff);
-            this.body.drawCircle(0, 0, this.radius);
-            this.body.moveTo(0,0); this.body.lineTo(15, 0);
-            this.body.endFill();
             this.pixiObj.addChild(this.body);
         }
 
-        this.body.tint = this.baseTint;
+        this.wasSlowed = false;
+        this.drawShape(false);
         
         GAME.layers.game.addChild(this.pixiObj);
     }
@@ -339,6 +356,40 @@ class Enemy {
         this.y += this.vy * dt;
         if(this.attackTimer > 0) this.attackTimer -= dt;
     }
+    drawShape(isSlowed) {
+        this.body.clear();
+        this.body.beginFill(0x000000, 0.8);
+        this.body.lineStyle(0);
+        
+        if (this.type === 'chaser') {
+            this.body.drawPolygon([15, 0, -10, 10, -5, 0, -10, -10]);
+            this.body.endFill();
+            
+            let pts = [{x: 15, y: 0}, {x: -10, y: 10}, {x: -5, y: 0}, {x: -10, y: -10}, {x: 15, y: 0}];
+            if (isSlowed) {
+                this.body.lineStyle(1, 0xffffff, 1.0);
+                drawDashedPath(this.body, pts, 4, 4);
+            } else {
+                this.body.lineStyle(2, 0xffffff, 1.0);
+                this.body.moveTo(pts[0].x, pts[0].y);
+                for(let i=1; i<pts.length; i++) this.body.lineTo(pts[i].x, pts[i].y);
+            }
+        } else {
+            this.body.drawCircle(0, 0, this.radius);
+            this.body.endFill();
+            
+            if (isSlowed) {
+                this.body.lineStyle(1, 0xffffff, 1.0);
+                drawDashedCircle(this.body, 0, 0, this.radius, 12);
+                drawDashedPath(this.body, [{x: 0, y: 0}, {x: 15, y: 0}], 4, 4);
+            } else {
+                this.body.lineStyle(2, 0xffffff, 1.0);
+                this.body.drawCircle(0, 0, this.radius);
+                this.body.moveTo(0,0); this.body.lineTo(15, 0);
+            }
+        }
+        this.body.tint = this.baseTint;
+    }
     draw() {
         let p = project(this.x, this.y, this.z);
         if(!p) {
@@ -388,10 +439,14 @@ class Enemy {
                 }
             }
 
+            let isSlowed = this.stunTimer > 0 || this.empSlowTimer > 0 || this.chaserSlowTimer > 0;
+            if (this.wasSlowed !== isSlowed) {
+                this.drawShape(isSlowed);
+                this.wasSlowed = isSlowed;
+            }
+
             if (this.flashTimer > 0) {
                 this.body.tint = 0xffffff;
-            } else if (this.stunTimer > 0 || this.empSlowTimer > 0) {
-                this.body.tint = 0x00d2ff; // Bright electric blue while EMP slowed
             } else {
                 this.body.tint = this.baseTint;
             }
@@ -616,12 +671,7 @@ class MycelialSpreader extends Enemy {
         this.body.destroy();
         
         this.body = new PIXI.Graphics();
-        this.body.beginFill(0x000000, 0.8);
-        this.body.lineStyle(2, 0xffffff);
-        this.body.drawCircle(0, 0, this.radius);
-        this.body.moveTo(0,0); this.body.lineTo(15, 0);
-        this.body.endFill();
-        this.body.tint = this.baseTint;
+        this.drawShape(false);
         
         this.bioSpots = new PIXI.Graphics();
         this.bioSpots.beginFill(0x99ff33, 1.0);
@@ -929,9 +979,32 @@ class MonolithArchitect extends Enemy {
         this.body.destroy();
         
         this.body = new PIXI.Graphics();
+        this.drawShape(false);
+        this.pixiObj.addChild(this.body);
+    }
+    drawShape(isSlowed) {
+        this.body.clear();
         this.body.beginFill(0x445566);
-        this.body.lineStyle(2, 0xffffff);
+        this.body.lineStyle(0);
         this.body.drawRect(-this.radius, -this.radius, this.radius*2, this.radius*2);
+        this.body.endFill();
+
+        let pts = [
+            {x: -this.radius, y: -this.radius},
+            {x: this.radius, y: -this.radius},
+            {x: this.radius, y: this.radius},
+            {x: -this.radius, y: this.radius},
+            {x: -this.radius, y: -this.radius}
+        ];
+
+        if (isSlowed) {
+            this.body.lineStyle(1, 0xffffff, 1.0);
+            drawDashedPath(this.body, pts, 4, 4);
+        } else {
+            this.body.lineStyle(2, 0xffffff, 1.0);
+            this.body.drawRect(-this.radius, -this.radius, this.radius*2, this.radius*2);
+        }
+
         this.body.beginFill(0x223344);
         this.body.lineStyle(0);
         this.body.drawRect(-this.radius/2, -this.radius/2, this.radius, this.radius);
@@ -940,7 +1013,6 @@ class MonolithArchitect extends Enemy {
         this.body.endFill();
         
         this.body.tint = this.baseTint;
-        this.pixiObj.addChild(this.body);
     }
     update(dt) {
         if(this.z > 0) {
@@ -1496,14 +1568,9 @@ class Boss extends Enemy {
         this.body.destroy();
         
         this.body = new PIXI.Graphics();
-        this.body.beginFill(0x000000, 0.8);
-        this.body.lineStyle(2, 0xffffff);
-        this.body.drawCircle(0, 0, this.radius);
-        this.body.moveTo(0,0); this.body.lineTo(15, 0);
-        this.body.endFill();
         
         this.baseTint = 0xff4400;
-        this.body.tint = this.baseTint;
+        this.drawShape(false);
         
         this.hpBar = new PIXI.Graphics();
         this.bossText = new PIXI.Text('VOID BOSS', {fontFamily: 'Orbitron', fontSize: 10, fill: 0xffffff});
@@ -2340,14 +2407,14 @@ class EmpBlast {
         this.displacementSprite.scale.set(0.001); // Prevent 0-scale crash
         this.displacementSprite.renderable = false; // Hide the raw texture from being drawn!
         
-        GAME.layers.background.addChild(this.displacementSprite);
+        GAME.pixiApp.stage.addChild(this.displacementSprite);
         
         this.displacementFilter = new PIXI.DisplacementFilter(this.displacementSprite, this.displacementPower);
         this.displacementFilter.padding = 64; // Prevents hard edge clipping artifacts
 
-        let currentFilters = GAME.layers.game.filters || [];
+        let currentFilters = GAME.layers.world.filters || [];
         currentFilters.push(this.displacementFilter);
-        GAME.layers.game.filters = currentFilters;
+        GAME.layers.world.filters = currentFilters;
     }
 
     generateBaseVectorTexture() {
@@ -2412,7 +2479,7 @@ class EmpBlast {
                     e.empKnockbackVx = Math.cos(kbAngle) * 1000;
                     e.empKnockbackVy = Math.sin(kbAngle) * 1000;
                     e.empKnockbackTimer = 0.3; 
-                    e.empSlowTimer = 3.0;
+                    e.empSlowTimer = 2.0;
                 }
             }
         }
@@ -2440,9 +2507,9 @@ class EmpBlast {
                 this.displacementSprite.destroy();
                 this.displacementSprite = null;
             }
-            if(GAME.layers.game.filters) {
-                GAME.layers.game.filters = GAME.layers.game.filters.filter(f => f !== this.displacementFilter);
-                if (GAME.layers.game.filters.length === 0) GAME.layers.game.filters = null;
+            if(GAME.layers.world.filters) {
+                GAME.layers.world.filters = GAME.layers.world.filters.filter(f => f !== this.displacementFilter);
+                if (GAME.layers.world.filters.length === 0) GAME.layers.world.filters = null;
             }
             if(this.displacementFilter) { this.displacementFilter.destroy(); this.displacementFilter = null; }
             return true;

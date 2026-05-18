@@ -25,7 +25,7 @@ function drawGrid() {
     let g = GAME.graphics.grid;
     g.clear();
     g.lineStyle(1, 0x1a2b4c, 0.3);
-    let gridSize = 200; // TWEAK: Grid density
+    let gridSize = 100; // TWEAK: Grid density
     
     // Determine visible world bounds
     let scale = getScale(0);
@@ -80,6 +80,7 @@ function initPixi() {
     });
     document.getElementById('pixi-container').appendChild(GAME.pixiApp.view);
 
+    GAME.layers.world = new PIXI.Container();
     GAME.layers.background = new PIXI.Container();
     GAME.layers.game = new PIXI.Container();
     GAME.layers.ui = new PIXI.Container();
@@ -87,8 +88,9 @@ function initPixi() {
     // Automate z-sorting natively within PixiJS for future phases!
     GAME.layers.game.sortableChildren = true;
 
-    GAME.pixiApp.stage.addChild(GAME.layers.background);
-    GAME.pixiApp.stage.addChild(GAME.layers.game);
+    GAME.layers.world.addChild(GAME.layers.background);
+    GAME.layers.world.addChild(GAME.layers.game);
+    GAME.pixiApp.stage.addChild(GAME.layers.world);
     GAME.pixiApp.stage.addChild(GAME.layers.ui);
 
     // Generate base Star Texture
@@ -455,7 +457,7 @@ function update(dt) {
 
     // --- Thruster Audio Loop ---
     if (!GAME.thrusterAudio) {
-        GAME.thrusterAudio = new Audio('sounds/thruster.ogg');
+        GAME.thrusterAudio = new Audio('https://media.githubusercontent.com/media/diploidian/void_drifter/refs/heads/sounds/thruster.ogg');
         GAME.thrusterAudio.loop = true;
         GAME.thrusterAudio.volume = 0;
         GAME.thrusterAudio.preservesPitch = false;
